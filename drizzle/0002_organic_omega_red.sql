@@ -1,0 +1,1 @@
+ALTER TABLE `students` ADD `current_class` text DEFAULT '' NOT NULL;

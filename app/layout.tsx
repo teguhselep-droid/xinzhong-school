@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Xin Zhong School · 新中语言学校",
+  title: "Kursus Bahasa Mandarin SHHS · 新中汉语补习学校",
   description: "Sistem manajemen sekolah · 学校管理系统",
   icons: {
     icon: "/favicon.svg",

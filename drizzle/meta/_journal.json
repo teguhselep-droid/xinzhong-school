@@ -8,6 +8,27 @@
       "when": 1793795017111,
       "tag": "0000_bored_romulus",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793799727315,
+      "tag": "0001_yummy_shadowcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793800394801,
+      "tag": "0002_organic_omega_red",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793940872780,
+      "tag": "0003_safe_ser_duncan",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,10 @@
 import assert from 'node:assert/strict';
+// Account-creating checks must be explicitly enabled against a disposable local database.
+// This script is never part of installation, startup, migrations, or builds.
+if (process.env.XINZHONG_TEST_DATABASE !== 'disposable') {
+  console.error('Stopped: user lifecycle tests create test accounts. Use a separate disposable local database and explicitly set XINZHONG_TEST_DATABASE=disposable.');
+  process.exit(1);
+}
 const base='http://127.0.0.1:5173/api/workspace';
 async function call(body,cookie=''){const r=await fetch(base,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',cookie},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]||''};}
 assert.equal((await call({action:'save'})).status,401);

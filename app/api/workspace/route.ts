@@ -1,3 +1,4 @@
+import { current } from '@/lib/server-auth';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/db';
 import { users, sessions, loginLimits } from '@/db/schema';
@@ -20,15 +21,7 @@ async function verify(password: string, stored: string) {
 const safe = (u: typeof users.$inferSelect) => ({id:u.id,username:u.username,name:u.name,role:u.role,active:!!u.active,createdAt:u.createdAt,lastLogin:u.lastLogin});
 const response = (value: unknown, status=200, cookie?: string) => Response.json(value,{status,headers:{'Cache-Control':'no-store',...(cookie?{'Set-Cookie':cookie}:{})}});
 const fail = (message: string,status=400) => response({error:message},status);
-async function current(req: Request) {
-  const token = req.headers.get('cookie')?.split(';').map(x=>x.trim()).find(x=>x.startsWith('xz_session='))?.slice(11);
-  if(!token) return null;
-  const db=getDb();
-  const [session]=await db.select().from(sessions).where(and(eq(sessions.tokenHash,await digest(token)),gt(sessions.expiresAt,Date.now())));
-  if(!session) return null;
-  const [user]=await db.select().from(users).where(and(eq(users.id,session.userId),eq(users.active,1)));
-  return user||null;
-}
+
 export async function GET(req: Request) {
   try {
     const me=await current(req);

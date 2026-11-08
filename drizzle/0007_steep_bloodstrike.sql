@@ -1,0 +1,1 @@
+ALTER TABLE `students` ADD `fav_char_ciphertext` text;

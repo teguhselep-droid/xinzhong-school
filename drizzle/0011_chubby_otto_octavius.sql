@@ -1,0 +1,1 @@
+ALTER TABLE `student_class_assignments` ADD `removed_at` text;

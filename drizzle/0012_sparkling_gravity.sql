@@ -1,0 +1,1 @@
+CREATE INDEX `class_attendance_assignment_idx` ON `class_attendance` (`assignment_id`);

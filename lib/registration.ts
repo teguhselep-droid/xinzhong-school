@@ -1,7 +1,9 @@
 import {ageYears,todayJakarta} from './student-fields';
+import {isChineseName,chineseNameError,isFavChar,favCharError} from './chinese-input';
 export const registrationFields=[
  ['nameId','Nama Indonesia / 印尼姓名'],['nameZh','Nama Mandarin / 中文姓名'],
  ['nik','NIK / 身份证号码'],['birthdate','Tgl lahir / 出生日期'],
+ ['favChar','Fav Char / 喜爱汉字'],
  ['phone','No. telepon / 电话号码'],['address','Alamat / 地址'],['city','Kota / 城市'],
  ['parentName','Nama orang tua / 家长姓名'],['parentPhone','Telepon orang tua / 家长电话'],
  ['notes','Catatan khusus / 特别备注'],
@@ -10,6 +12,8 @@ export type RegistrationData=Record<typeof registrationFields[number][0],string>
 export type RegistrationErrors=Partial<Record<keyof RegistrationData,string>>;
 export function validateRegistration(data:RegistrationData,today=todayJakarta()):RegistrationErrors{
  const errors:RegistrationErrors={};
+ if(!isFavChar(data.favChar||''))errors.favChar=favCharError;
+ if(!isChineseName(data.nameZh))errors.nameZh=chineseNameError;
  for(const key of ['nameId','nik','birthdate','phone','address','city'] as const)if(!data[key]?.trim())errors[key]='Wajib diisi / 必填';
  for(const [key] of registrationFields)if(data[key].length>(key==='notes'?20000:key==='address'?2000:200))errors[key]='Terlalu panjang / 内容过长';
  const dob=data.birthdate;

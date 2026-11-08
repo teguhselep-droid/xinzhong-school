@@ -1,3 +1,4 @@
+import {ensureRegistrationNumbers} from '@/lib/registration-numbers';
 import { current } from '@/lib/server-auth';
 import { getDb } from '@/db';
 import { editHistory } from '@/db/schema';
@@ -7,7 +8,7 @@ export async function GET(req:Request){
  try{
   const me=await current(req);if(!me)return reply({error:'Silakan masuk / 请登录'},401);
   if(me.role!=='supervisor')return reply({error:'Akses ditolak / 无访问权限'},403);
-  const q=new URL(req.url).searchParams, search=(q.get('search')||'').slice(0,200), db=getDb();
+  const q=new URL(req.url).searchParams, search=(q.get('search')||'').slice(0,200), db=getDb();await ensureRegistrationNumbers(db);
   const columns={editedAt:editHistory.editedAt,username:editHistory.username,page:editHistory.page,recordId:editHistory.recordId,field:editHistory.field,fromValue:editHistory.fromValue,toValue:editHistory.toValue};
   const sort=q.get('sort') as keyof typeof columns, order=q.get('direction')==='asc'?asc:desc;
   const where=search?or(...Object.values(columns).map(c=>like(c,`%${search}%`))):undefined;

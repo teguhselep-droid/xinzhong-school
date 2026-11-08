@@ -6,8 +6,13 @@ export const studentFields = [
   ['registeredDate','Tgl daftar / 注册日期'], ['notes','Catatan khusus / 特别备注'],
 ] as const;
 export type StudentField = typeof studentFields[number][0];
-export type Student = Record<StudentField,string> & {id:number; registrationNumber:string; currentClass:string; lastAttendanceDate:string|null; revision:number};
-export const registrationNumber = (id:number) => `SHHS-${String(id).padStart(6,'0')}`;
+export const loginStatusLabels:Record<string,string>={active:'Aktif / 启用',locked:'Terkunci / 已锁定'};
+export const staffStudentFields=[...studentFields,['favChar','Fav Char / 喜爱汉字'],['loginStatus','Status login / 登录状态']] as const;
+export type Student = Omit<Record<StudentField,string>,'nik'> & {nik?:string;favChar?:string;hasFavChar?:boolean; id:number; registrationNumber:string; currentClass:string; lastAttendanceDate:string|null; revision:number; canDelete:boolean; loginStatus:string;failedLoginAttempts:number;lastFailedLoginAt:string|null;loginVersion:number};
+export function registrationNumber(student:{registrationNumber:string|null}){
+ if(!student.registrationNumber||!/^\d{7}$/.test(student.registrationNumber))throw Error('Student registration number has not been assigned');
+ return student.registrationNumber;
+}
 export const todayJakarta = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 export function ageYears(birthdate:string, today=todayJakarta()):number|null {
   if(!birthdate) return null;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { BookOpen, Landmark, Plus } from 'lucide-react';
+import { BookOpen, FileText, Landmark, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -10,14 +10,15 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { accountLabel, canAccessAccounting, ledgerPageSize, maxTransactionAmount, type AccountingAccount, type LedgerPage } from '@/lib/accounting-fields';
+import { accountLabel, canAccessAccounting, ledgerPageSize, maxTransactionAmount, type AccountingAccount, type LedgerPage, type MonthlyAccountingReport } from '@/lib/accounting-fields';
 import { todayJakarta } from '@/lib/student-fields';
 
 const currency = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
 const dateFormat = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeZone: 'Asia/Jakarta' });
 const inputDateFormat = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Jakarta' });
+const monthFormat = new Intl.DateTimeFormat('id-ID', { month: 'long', timeZone: 'Asia/Jakarta' });
 const rupiah = (value: string) => currency.format(BigInt(value));
 
 async function accountingRequest<T>(url: string, options: RequestInit): Promise<T> {
@@ -221,13 +222,97 @@ function Ledger({ account, close }: { account: AccountingAccount; close: () => v
   </Dialog>;
 }
 
+function ReportAccounts({ title, rows, total, totalLabel, amountLabel = 'Jumlah / 金额' }: {
+  title: string; rows: AccountingAccount[]; total: string; totalLabel: string; amountLabel?: string;
+}) {
+  return <section className="flex min-w-0 flex-col gap-2 rounded-md border p-3">
+    <h3 className="font-medium">{title}</h3>
+    <Table>
+      <TableHeader><TableRow>
+        <TableHead scope="col">Nama akun / 账户名称</TableHead>
+        <TableHead scope="col" className="text-right">{amountLabel}</TableHead>
+      </TableRow></TableHeader>
+      <TableBody>
+        {rows.length ? rows.map(row => <TableRow key={row.id}>
+          <TableCell className="whitespace-normal" title={row.name}>{accountLabel(row)}</TableCell>
+          <TableCell className="text-right tabular-nums">{rupiah(row.balance)}</TableCell>
+        </TableRow>) : <EmptyRow columns={2} loading={false} message="Belum ada rekening bank / 暂无银行账户" />}
+      </TableBody>
+      <TableFooter><TableRow>
+        <TableHead scope="row" className="whitespace-normal">{totalLabel}</TableHead>
+        <TableCell className="text-right tabular-nums">{rupiah(total)}</TableCell>
+      </TableRow></TableFooter>
+    </Table>
+  </section>;
+}
+
+function MonthlyReport({ close }: { close: () => void }) {
+  const today = todayJakarta();
+  const currentMonth = today.slice(0, 7);
+  const [month, setMonth] = useState(currentMonth);
+  const [reload, setReload] = useState(0);
+  const query = new URLSearchParams({ view: 'monthly-report', month });
+  const { data, loading, error } = useAccountingData<MonthlyAccountingReport>('/api/accounting?' + query, reload);
+  const monthInProgress = !!data && data.endDate > today;
+  function selectMonth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget);
+    setMonth(String(values.get('year')) + '-' + String(values.get('month')));
+    setReload(value => value + 1);
+  }
+  return <Dialog open onOpenChange={open => { if (!open) close(); }}>
+    <DialogContent className="student-editor" showCloseButton={false} aria-describedby={undefined}>
+      <DialogHeader><DialogTitle>Laporan bulanan / 月度报告</DialogTitle></DialogHeader>
+      <form onSubmit={selectMonth}>
+        <FieldGroup className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <Field>
+            <FieldLabel htmlFor="report-month">Bulan / 月份</FieldLabel>
+            <NativeSelect id="report-month" name="month" defaultValue={currentMonth.slice(5)}>
+              {Array.from({ length: 12 }, (_, i) => (
+                <NativeSelectOption key={i} value={String(i + 1).padStart(2, '0')}>
+                  {monthFormat.format(new Date(Date.UTC(2020, i, 15)))} / {i + 1}月
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="report-year">Tahun / 年份</FieldLabel>
+            <Input id="report-year" name="year" type="number" min={1900} max={Number(currentMonth.slice(0, 4))}
+              step={1} defaultValue={currentMonth.slice(0, 4)} required />
+          </Field>
+          <Button type="submit" variant="outline">Tampilkan / 显示</Button>
+        </FieldGroup>
+      </form>
+      <ErrorMessage message={error} />
+      {loading && <p role="status">Memuat / 加载中…</p>}
+      {data && <>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <ReportAccounts title="Pendapatan / 收入" rows={data.income} total={data.totalIncome}
+            totalLabel="Total pendapatan / 收入合计" />
+          <ReportAccounts title="Beban / 费用" rows={data.expenses} total={data.totalExpenses}
+            totalLabel="Total beban / 费用合计" />
+        </div>
+        <p className="flex flex-wrap justify-between gap-2 rounded-md border p-3 font-medium">
+          <span>Selisih pendapatan dan beban / 收支差额</span>
+          <span className="tabular-nums">{rupiah(data.net)}</span>
+        </p>
+        <ReportAccounts
+          title={(monthInProgress ? 'Saldo bank s.d. hari ini / 截至今日银行余额' : 'Saldo bank akhir bulan / 月末银行余额')
+            + ' · ' + dateFormat.format(new Date((monthInProgress ? today : data.endDate) + 'T00:00:00+07:00'))}
+          rows={data.banks} total={data.totalBankBalance} totalLabel="Total saldo bank / 银行余额合计" amountLabel="Saldo / 余额" />
+      </>}
+      <DialogFooter><Button type="button" variant="outline" onClick={close}>Tutup / 关闭</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
+}
+
 export default function AccountingWorkspace({ role }: { role: string }) {
   const allowed = canAccessAccounting(role);
   return allowed ? <Accounts /> : <main className="workspace"><ErrorMessage message="Akses ditolak / 无访问权限" /></main>;
 }
 
 function Accounts() {
-  const [editor, setEditor] = useState<'bank' | 'entry' | null>(null);
+  const [editor, setEditor] = useState<'bank' | 'entry' | 'report' | null>(null);
   const [ledger, setLedger] = useState<AccountingAccount | null>(null);
   const [reload, setReload] = useState(0);
   const { data, error, loading } = useAccountingData<{ accounts: AccountingAccount[] }>('/api/accounting', reload);
@@ -241,6 +326,9 @@ function Accounts() {
     <div className="page-heading">
       <h1>Akuntansi<span className="zh" lang="zh-Hans">会计</span></h1>
       <div className="heading-actions">
+        <Button variant="outline" onClick={() => setEditor('report')}>
+          <FileText data-icon="inline-start" />Laporan / 报告
+        </Button>
         <Button variant="outline" onClick={() => setEditor('bank')}>
           <Landmark data-icon="inline-start" />Tambah rekening bank / 添加银行账户
         </Button>
@@ -278,6 +366,7 @@ function Accounts() {
     {editor === 'bank' && <BankEditor close={() => setEditor(null)} saved={() => saved('Rekening bank disimpan / 银行账户已保存')} />}
     {editor === 'entry' && <TransactionEditor accounts={accounts} close={() => setEditor(null)}
       saved={() => saved('Transaksi disimpan / 交易已保存')} />}
+    {editor === 'report' && <MonthlyReport close={() => setEditor(null)} />}
     {ledger && <Ledger account={ledger} close={() => setLedger(null)} />}
   </main>;
 }

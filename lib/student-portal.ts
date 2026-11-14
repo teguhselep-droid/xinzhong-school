@@ -9,7 +9,7 @@ export const normalizePhone=(s:string)=>{const d=s.replace(/\D/g,'');return d.st
 export const hash=async(s:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))).map(x=>x.toString(16).padStart(2,'0')).join('');
 export const identityHash=(s:typeof students.$inferSelect)=>hash(JSON.stringify([normalizeName(s.nameId),normalizePhone(s.phone),s.birthdate,s.nik,s.loginAccessVersion,s.favCharCiphertext]));
 export async function selfView(s:typeof students.$inferSelect){
- const {id,registrationToken,updateToken,nik,favCharCiphertext,loginStatus,failedLoginAttempts,lastFailedLoginAt,loginLockedAt,loginVersion,loginAccessVersion,...data}=s;
+ const {id,registrationToken,updateToken,nik,favCharCiphertext,active,loginStatus,failedLoginAttempts,lastFailedLoginAt,loginLockedAt,loginVersion,loginAccessVersion,...data}=s;
  const [classSummary] = await getDb().select(studentClassSummary).from(students).where(eq(students.id, id));
  return {...data,...classSummary,registrationNumber:registrationNumber(s),age:ageYears(s.birthdate),canFillNik:!nik,nikMasked:nik?'•••• •••• •••• '+nik.slice(-4):''};
 }
@@ -20,6 +20,6 @@ export async function studentIdentity(req:Request){
  const [session]=await db.select().from(studentSessions).where(and(eq(studentSessions.tokenHash,await hash(token)),gt(studentSessions.expiresAt,Date.now())));
  if(!session)return null;
  const [student]=await db.select().from(students).where(eq(students.id,session.studentId));
- if(!student||student.loginStatus!=='active'||session.identityHash!==await identityHash(student))return null;
+ if(!student||!student.active||student.loginStatus!=='active'||session.identityHash!==await identityHash(student))return null;
  return {student,session};
 }

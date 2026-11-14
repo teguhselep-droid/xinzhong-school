@@ -1,9 +1,9 @@
-import { asc, count, desc, eq, like, or, sql } from 'drizzle-orm';
+import { asc, eq, like, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
 import { accountingAccounts, inventoryMovements, inventoryProducts } from '@/db/schema';
 import { maxTransactionAmount } from '@/lib/accounting-fields';
-import { canAddInventory, inventoryPageSize, maxInventoryQuantity } from '@/lib/inventory-fields';
+import { canAddInventory, inventoryPageSize, maxInventoryQuantity, type InventoryMovement } from '@/lib/inventory-fields';
 import { current } from '@/lib/server-auth';
 
 const input = z.object({
@@ -41,17 +41,39 @@ export async function GET(req: Request) {
       return reply({ products, banks });
     }
 
-    const [{ total }] = await db.select({ total: count() }).from(inventoryMovements);
+    // Purchases already post stock and accounting changes. Read their receipt lines into history.
+    const history = sql`
+      with purchase_items as (
+        select p.id, p.bank_id, p.recorded_at, p.recorded_by, p.voided_at, p.voided_by,
+          json_extract(line.value, '$.productId') as productId, json_extract(line.value, '$.name') as product,
+          json_extract(line.value, '$.quantity') as quantity,
+          (json_extract(line.value, '$.price') - json_extract(line.value, '$.discount'))
+            * json_extract(line.value, '$.quantity') as payment
+        from school_payments p, json_each(p.detail) line
+        where p.kind = 'purchase'
+      ), movements as (
+        select m.id, m.direction, m.product_id as productId, p.name as product, m.quantity, m.payment,
+          m.bank_id, m.recorded_at as recordedAt, m.recorded_by as recordedBy, null as purchaseId
+        from inventory_movements m join inventory_products p on p.id = m.product_id
+        union all
+        select id, 'out', productId, product, quantity, payment, bank_id, recorded_at, recorded_by, id
+        from purchase_items
+        union all
+        select id, 'in', productId, product, quantity, -payment, bank_id, voided_at, voided_by, id
+        from purchase_items where voided_at is not null
+      )
+    `;
+    const [{ total }] = await db.all<{ total: number }>(sql`${history} select count(*) as total from movements`);
     const requested = Math.max(1, Math.trunc(Number(query.get('page'))) || 1);
     const page = Math.min(requested, Math.max(1, Math.ceil(total / inventoryPageSize)));
-    const rows = await db.select({
-      id: inventoryMovements.id, direction: inventoryMovements.direction, productId: inventoryMovements.productId,
-      product: inventoryProducts.name, quantity: inventoryMovements.quantity, payment: inventoryMovements.payment,
-      bank: accountingAccounts.name, recordedAt: inventoryMovements.recordedAt, recordedBy: inventoryMovements.recordedBy,
-    }).from(inventoryMovements)
-      .innerJoin(inventoryProducts, eq(inventoryProducts.id, inventoryMovements.productId))
-      .innerJoin(accountingAccounts, eq(accountingAccounts.id, inventoryMovements.bankId))
-      .orderBy(desc(inventoryMovements.id)).limit(inventoryPageSize).offset((page - 1) * inventoryPageSize);
+    const rows = await db.all<InventoryMovement>(sql`
+      ${history}
+      select m.id, m.direction, m.productId, m.product, m.quantity, m.payment,
+        a.name as bank, m.recordedAt, m.recordedBy, m.purchaseId
+      from movements m join accounting_accounts a on a.id = m.bank_id
+      order by m.recordedAt desc, m.purchaseId is not null desc, m.id desc, m.direction, m.productId
+      limit ${inventoryPageSize} offset ${(page - 1) * inventoryPageSize}
+    `);
     return reply({ rows, total, page });
   } catch (error) {
     console.error('Inventory movements read failed', error);

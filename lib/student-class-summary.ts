@@ -1,16 +1,25 @@
 import { sql } from 'drizzle-orm';
 
+// Both queries alias the enrollment as e and the class as c.
+export const currentClassEnrollment = sql`e.removed_at is null
+  and exists (select 1 from students enrolled where enrolled.id = e.student_id and enrolled.active = 1)
+  and exists (select 1 from class_days d where d.class_id = c.id and d.recorded_at is null)`;
+
+export const hasCurrentClass = (studentId: number) => sql`exists (
+  select 1 from student_class_assignments e join classes c on c.id = e.class_id
+  where e.student_id = ${studentId} and (${currentClassEnrollment})
+)`;
+
 export const studentClassSummary = {
   // Retain the imported class label only until there is a roster history in this system.
   currentClass: sql<string>`
-    case when exists (
+    case when students.active = 0 then '' when exists (
       select 1 from student_class_assignments e where e.student_id = students.id and e.class_id is not null
     ) then coalesce((
       select group_concat(active.name, ', ') from (
         select c.name from student_class_assignments e
         join classes c on c.id = e.class_id
-        where e.student_id = students.id and e.removed_at is null
-          and exists (select 1 from class_days d where d.class_id = c.id and d.recorded_at is null)
+        where e.student_id = students.id and (${currentClassEnrollment})
         order by c.name, c.code
       ) active
     ), '') else students.current_class end

@@ -1,8 +1,8 @@
-import { asc, eq, like, or } from 'drizzle-orm';
+import { and, asc, eq, like, or } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { students, teachers } from '@/db/schema';
 import { current } from '@/lib/server-auth';
-import { attendanceList, classDetails, classList, meetingRoster, teacherClassHistory } from '@/lib/class-data';
+import { attendanceList, classDetails, classList, meetingRoster, studentClassHistory, teacherClassHistory } from '@/lib/class-data';
 import { canManageClasses } from '@/lib/class-fields';
 import { ensureRegistrationNumbers } from '@/lib/registration-numbers';
 import { classRequest, ClassRequestError } from '@/lib/class-writes';
@@ -36,9 +36,14 @@ export async function GET(req: Request) {
         return reply(await attendanceList(db, query));
       case 'teachers':
         return reply(await db.select({ id: teachers.id, nameId: teachers.nameId, nameZh: teachers.nameZh })
-          .from(teachers).orderBy(asc(teachers.nameId), asc(teachers.id)));
+          .from(teachers).where(eq(teachers.active, true)).orderBy(asc(teachers.nameId), asc(teachers.id)));
       case 'teacher-history':
         return reply(await teacherClassHistory(db, query));
+      case 'student-history': {
+        const id = Number(query.get('student'));
+        if (!Number.isSafeInteger(id) || id < 1) return reply({ error: 'Data tidak valid / 数据无效' }, 400);
+        return reply(await studentClassHistory(db, id, query));
+      }
       case 'students': {
         if (!canManageClasses(staff.role)) return reply({ error: forbidden }, 403);
         const search = (query.get('search') ?? '').trim().slice(0, 100);
@@ -48,8 +53,8 @@ export async function GET(req: Request) {
         return reply(await db.select({
           id: students.id, nameId: students.nameId, nameZh: students.nameZh,
           registrationNumber: students.registrationNumber,
-        }).from(students).where(or(like(students.nameId, match), like(students.nameZh, match),
-          like(students.registrationNumber, match))).orderBy(asc(students.nameId), asc(students.id)).limit(30));
+        }).from(students).where(and(eq(students.active, true), or(like(students.nameId, match), like(students.nameZh, match),
+          like(students.registrationNumber, match)))).orderBy(asc(students.nameId), asc(students.id)).limit(30));
       }
       default:
         return reply(await classList(db, query));
@@ -74,6 +79,20 @@ export async function POST(req: Request) {
     return reply(await classRequest(getDb(), staff, body));
   } catch (error) {
     if (error instanceof ClassRequestError) return reply({ error: error.message }, error.status);
+    for (let cause: unknown = error; cause instanceof Error; cause = cause.cause) {
+      if (cause.message.includes('INACTIVE_STUDENT_ENROLLMENT')) {
+        return reply({ error: 'Murid nonaktif tidak dapat didaftarkan / 非在读学生无法报名' }, 409);
+      }
+      if (cause.message.includes('INACTIVE_TEACHER_ASSIGNMENT')) {
+        return reply({ error: 'Pilih guru yang aktif / 请选择在职教师' }, 409);
+      }
+      if (cause.message.includes('PAYMENT_DAY_ALREADY_PAID')) {
+        return reply({ error: 'Jadwal sudah dibayar / 该课次已付款' }, 409);
+      }
+      if (cause.message.includes('LEAVE_OVERLAP')) return reply({ error: 'Periode cuti bertumpang tindih / 请假日期重叠' }, 409);
+      if (cause.message.includes('LEAVE_ATTENDANCE_LOCKED')) return reply({ error: 'Kehadiran dalam periode ini sudah dicatat / 此期间的出勤已记录' }, 409);
+      if (cause.message.includes('LEAVE_ENROLLMENT_REQUIRED')) return reply({ error: 'Pilih murid yang masih terdaftar / 请选择仍在班级中的学生' }, 409);
+    }
     console.error('Class write failed', error);
     return reply({ error: 'Gagal menyimpan data kelas / 无法保存班级资料' }, 500);
   }

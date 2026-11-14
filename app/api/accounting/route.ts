@@ -2,7 +2,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
 import { accountingAccounts, accountingEntries } from '@/db/schema';
-import { accountLedger, chartOfAccounts } from '@/lib/accounting-data';
+import { accountLedger, chartOfAccounts, monthlyAccountingReport } from '@/lib/accounting-data';
 import { canAccessAccounting, maxTransactionAmount } from '@/lib/accounting-fields';
 import { current } from '@/lib/server-auth';
 import { todayJakarta } from '@/lib/student-fields';
@@ -35,6 +35,13 @@ export async function GET(req: Request) {
     if (!canAccessAccounting(staff.role)) return fail(forbidden, 403);
     const db = getDb();
     const query = new URL(req.url).searchParams;
+    if (query.get('view') === 'monthly-report') {
+      const month = query.get('month') ?? '';
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || month < '1900-01' || month > todayJakarta().slice(0, 7)) {
+        return fail('Bulan laporan tidak valid / 报告月份无效');
+      }
+      return reply(await monthlyAccountingReport(db, month));
+    }
     const id = query.get('account');
     if (id === null) return reply({ accounts: await chartOfAccounts(db) });
     const from = query.get('from') || undefined;

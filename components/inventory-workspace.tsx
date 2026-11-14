@@ -16,6 +16,7 @@ import {
   type InventoryCategory, type InventoryMovement, type InventoryProduct, type MovementDirection,
 } from '@/lib/inventory-fields';
 import { maxTransactionAmount } from '@/lib/accounting-fields';
+import { paymentCode } from '@/lib/transaction-fields';
 
 type InventoryPage = { rows: InventoryProduct[]; total: number; page: number; categories: InventoryCategory[] };
 const currency = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
@@ -249,9 +250,17 @@ function MovementHistory({ close }: { close: () => void }) {
         <TableBody>
           {loading || !data?.rows.length ? <TableRow><TableCell colSpan={columns.length}>
             {loading ? 'Memuat / 加载中…' : error ? '—' : 'Belum ada catatan / 暂无记录'}
-          </TableCell></TableRow> : data.rows.map(row => <TableRow key={row.id}>
+          </TableCell></TableRow> : data.rows.map(row => <TableRow key={
+            row.purchaseId === null ? 'movement-' + row.id : ['purchase', row.purchaseId, row.direction, row.productId].join('-')
+          }>
             <TableCell>{movementDateFormat.format(new Date(row.recordedAt))}</TableCell>
-            <TableCell>{movementLabels[row.direction]}</TableCell>
+            <TableCell>
+              {movementLabels[row.direction]}
+              {row.purchaseId !== null && <div className="text-xs text-muted-foreground">
+                {row.direction === 'in' ? 'Pembatalan pembelian / 商品付款冲销' : 'Pembayaran pembelian / 商品付款'}
+                {' · ' + paymentCode(row.purchaseId)}
+              </div>}
+            </TableCell>
             <TableCell>{row.productId} · {row.product}</TableCell>
             <TableCell>{numberFormat.format(row.quantity)}</TableCell>
             <TableCell>{currency.format(row.payment)}</TableCell>

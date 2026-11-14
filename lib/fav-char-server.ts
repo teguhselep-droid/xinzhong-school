@@ -10,7 +10,7 @@ export async function encryptFavChar(value:string){
  const encrypted=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:new TextEncoder().encode('shhs-fav-char-v1')},key,new TextEncoder().encode(value)));
  return 'v1:'+Array.from(iv).map(x=>x.toString(16).padStart(2,'0')).join('')+':'+Array.from(encrypted).map(x=>x.toString(16).padStart(2,'0')).join('');
 }
-export async function decryptFavChar(value:string){
+async function decryptFavChar(value:string){
  const [version,nonce,data]=value.split(':');if(version!=='v1'||!nonce||!data)throw Error('Invalid Fav Char ciphertext');
  const key=await crypto.subtle.importKey('raw',keyBytes(),'AES-GCM',false,['decrypt']);
  const bytes=(hex:string)=>Uint8Array.from(hex.match(/../g)!,x=>parseInt(x,16));

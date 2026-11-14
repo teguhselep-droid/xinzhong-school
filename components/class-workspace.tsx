@@ -12,13 +12,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AddMeetingDialog, ClassEditor, classDate, classHours, getClassData, MeetingEditor, saveClassData } from '@/components/class-forms';
+import { AddMeetingDialog, ClassEditor, ClassLeaveDialog, classDate, classHours, getClassData, MeetingEditor, saveClassData } from '@/components/class-forms';
 import {
-  canManageClasses, classPageSize, classPages, type AttendanceEntry, type AttendanceRecord,
+  canManageClasses, classLeaveLabel, classPageSize, classPages, type AttendanceEntry, type AttendanceRecord, type ClassLeave,
   type ClassDay, type ClassRow, type ClassTeacher, type Enrollment,
 } from '@/lib/class-fields';
 
-type Detail = { group: ClassRow; days: ClassDay[]; roster: Enrollment[] };
+type Detail = { group: ClassRow; days: ClassDay[]; roster: Enrollment[]; leaves: ClassLeave[] };
 type Meeting = { day: ClassDay; roster: AttendanceEntry[] };
 type Page<T> = { rows: T[]; total: number; page: number };
 const detailLink = (id: string) => '/class-details?' + new URLSearchParams({ class: id });
@@ -138,6 +138,7 @@ function ClassDetail({ id, manager }: { id: string; manager: boolean }) {
   const [reload, setReload] = useState(0);
   const [editing, setEditing] = useState<ClassDay | null>(null);
   const [adding, setAdding] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
   const [removing, setRemoving] = useState<ClassDay | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState('');
@@ -167,6 +168,7 @@ function ClassDetail({ id, manager }: { id: string; manager: boolean }) {
       <Button asChild variant="outline"><a href="/classes"><ArrowLeft data-icon="inline-start" />Data Kelas / 班级资料</a></Button>
       {group && <Button asChild variant="outline"><a href={recordsLink(group.id)}>Record Kelas / 课堂记录</a></Button>}
       {manager && group && <Button onClick={() => setAdding(true)}><Plus data-icon="inline-start" />Tambah jadwal / 添加课次</Button>}
+      {manager && group && <Button variant="outline" onClick={() => setLeaveOpen(true)}>Cuti murid / 学生暂停上课</Button>}
     </Heading>
     <ErrorMessage message={detail.error || teachers.error} />
     {group && <h2 className="mb-3 text-base font-semibold text-white">{group.code} · {group.name}</h2>}
@@ -207,6 +209,11 @@ function ClassDetail({ id, manager }: { id: string; manager: boolean }) {
       setAdding(false);
       refreshSchedule('Jadwal ditambahkan / 课次已添加');
     }} />}
+    {leaveOpen && detail.data && <ClassLeaveDialog classId={id} roster={detail.data.roster} leaves={detail.data.leaves}
+      close={() => setLeaveOpen(false)} saved={() => {
+        setLeaveOpen(false);
+        refreshSchedule('Cuti disimpan / 暂停上课记录已保存');
+      }} />}
     {removing && <AlertDialog open onOpenChange={open => { if (!open && !removeBusy) setRemoving(null); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
@@ -262,7 +269,7 @@ function ClassRecords({ params }: { params: URLSearchParams }) {
             <TableCell><a className="underline" href={recordsLink(row.classId, row.dayId)}>{row.code}</a></TableCell>
             <TableCell>{row.className}</TableCell><TableCell>{classDate(row.date)}</TableCell><TableCell>{row.time}</TableCell>
             <TableCell>{classHours(row.minutes)}</TableCell><TableCell>{row.teacher}</TableCell><TableCell>{row.student}</TableCell>
-            <TableCell>{row.present ? 'Hadir / 出勤' : 'Tidak hadir / 缺席'}</TableCell>
+            <TableCell>{row.onLeave ? classLeaveLabel : row.present ? 'Hadir / 出勤' : 'Tidak hadir / 缺席'}</TableCell>
             <TableCell className="long-cell">{row.notes || '—'}</TableCell>
           </TableRow>)}
         </ClassTable>

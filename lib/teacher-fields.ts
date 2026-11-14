@@ -9,9 +9,12 @@ const teacherPersonalFields = [
 ] as const;
 
 const registrationDateField = ['registeredDate', 'Tgl daftar / 登记日期'] as const;
+export const teacherStatusField = 'Status guru / 教师状态';
+export const teacherStatusLabel = (active: boolean) => active ? 'Aktif / 在职' : 'Nonaktif / 非在职';
 export const teacherFields = [...teacherPersonalFields, registrationDateField] as const;
 
 export const teacherColumns = [
+  ['active', teacherStatusField],
   ...teacherPersonalFields,
   ['classCount', 'Jumlah kelas / 班级数量'],
   ['attendanceCount', 'Jumlah kehadiran / 出勤次数'],
@@ -24,6 +27,7 @@ export type TeacherProfile = Record<Exclude<TeacherField, 'nik'>, string> & { ni
 export type Teacher = TeacherProfile & {
   id: number;
   revision: number;
+  active: boolean;
   classCount: number;
   attendanceCount: number;
   recordedBy: string | null;

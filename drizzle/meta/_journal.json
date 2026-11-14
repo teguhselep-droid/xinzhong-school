@@ -134,6 +134,41 @@
       "when": 1794061589137,
       "tag": "0018_foamy_sprite",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1794288417113,
+      "tag": "0019_watery_argent",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1794288768503,
+      "tag": "0020_nebulous_radioactive_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1794315376849,
+      "tag": "0021_sad_songbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1794315825708,
+      "tag": "0022_zippy_blackheart",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1794318153406,
+      "tag": "0023_loud_slipstream",
+      "breakpoints": true
     }
   ]
 }

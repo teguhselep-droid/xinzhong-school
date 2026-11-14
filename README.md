@@ -89,10 +89,9 @@ Chinese names use the shared Han-character validator in lib/chinese-input.ts. Si
 
 ## Fav Char verification factor
 
-- Registration requires Fav Char / 喜爱汉字: exactly one Han code point, including rare supplementary Han characters. No trimming, multi-character values, Latin letters, digits, or punctuation are accepted.
+- Registration assigns the initial Fav Char / 喜爱汉字 automatically. New students and older records without a saved character use 中. Existing saved characters continue to work.
 - Student verification now requires Indonesian name, phone, birthdate, AND Fav Char. Only all four correct details reset the counter. Five failures still permanently lock access until admin/supervisor unlocks it.
-- Saved Fav Char is encrypted with AES-256-GCM and a random nonce. Only supervisor staff responses decrypt it; admin/accounting/teacher and student self-service never receive the value or ciphertext. Supervisor can replace it in Edit murid. Favorites are excluded from search; supervisor-only sorting decrypts and sorts before pagination.
-- Fav Char changes revoke earlier student sessions. Edit History records only that a value was set/changed, never the character or ciphertext.
-- Legacy students have no default favorite. A supervisor must set it before their next portal verification. There is no three-detail bypass or automatic enrollment based on old verification details.
+- A verified student can enter one new Han character in the portal. Supervisors can only reset it to 中 in Edit murid at the student's request. Staff and student views never receive the saved character or ciphertext.
+- Saved characters are encrypted with AES-256-GCM and a random nonce. Changing or resetting the character revokes existing student sessions. Edit History records the action without logging the character or ciphertext. Resetting the character does not unlock a locked account.
 - REQUIRED RUNTIME SECRET: FAV_CHAR_ENCRYPTION_KEY is a stable 32-byte key encoded as 64 hex characters. It is configured locally in ignored .dev.vars. Before publishing, configure this SAME key as a secret in the destination runtime. Never commit or package .dev.vars, expose the key, or regenerate it during builds. Back it up securely together with the corresponding database. A database transfer must retain the matching key; key rotation requires re-encrypting existing values.
 - All Fav Char verification tests ran against the isolated ignored test database. The actual draft's student records were not modified.

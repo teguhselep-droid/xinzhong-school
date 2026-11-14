@@ -4,7 +4,7 @@ import { editHistory, teachers } from '@/db/schema';
 import { chineseNameError, isChineseName } from '@/lib/chinese-input';
 import { current } from '@/lib/server-auth';
 import { todayJakarta } from '@/lib/student-fields';
-import { canEditTeachers, teacherFields, teacherPageLabel, teacherPageSize } from '@/lib/teacher-fields';
+import { canEditTeachers, teacherFields, teacherPageLabel, teacherPageSize, teacherStatusField, teacherStatusLabel } from '@/lib/teacher-fields';
 import { teacherClassCount, teacherMeetingCount } from '@/lib/class-data';
 
 function reply(data: unknown, status = 200) {
@@ -82,6 +82,10 @@ export async function POST(req: Request) {
 
     const today = todayJakarta();
     const profile: typeof teachers.$inferInsert = { nameId: '', registeredDate: today };
+    if (Object.hasOwn(body, 'active')) {
+      if (typeof body.active !== 'boolean') return fail('Status guru tidak valid / 教师状态无效');
+      profile.active = body.active;
+    }
     for (const [key] of teacherFields) {
       if (key === 'nik' && staff.role !== 'supervisor') continue;
       const rawValue = body[key];
@@ -116,23 +120,28 @@ export async function POST(req: Request) {
     const [old] = await db.select().from(teachers).where(eq(teachers.id, Number(body.id)));
     if (!old) return fail('Guru tidak ditemukan / 未找到教师', 404);
     if (old.revision !== body.revision) return fail(conflict, 409);
-    const changed = teacherFields.filter(([key]) => profile[key] !== undefined && profile[key] !== old[key]);
+    const changed: { field: string; from: string; to: string }[] =
+      teacherFields.filter(([key]) => profile[key] !== undefined && profile[key] !== old[key])
+      .map(([key, field]) => ({ field, from: old[key], to: profile[key]! }));
+    if (profile.active !== undefined && profile.active !== old.active) {
+      changed.push({ field: teacherStatusField, from: teacherStatusLabel(old.active), to: teacherStatusLabel(profile.active) });
+    }
     if (!changed.length) return reply({ id: old.id });
 
     const token = crypto.randomUUID();
     const editedAt = new Date().toISOString();
     const reference = 'Guru / 教师 #' + old.id;
     // The token ties each history insert to the edit that won the revision check.
-    const audits = changed.map(([key, label]) => db.insert(editHistory).select(db.select({
+    const audits = changed.map(({ field, from, to }) => db.insert(editHistory).select(db.select({
       id: sql<number>`NULL`.as('id'),
       editedAt: sql<string>`${editedAt}`.as('edited_at'),
       userId: sql<string>`${staff.id}`.as('user_id'),
       username: sql<string>`${staff.username}`.as('username'),
       page: sql<string>`${teacherPageLabel}`.as('page'),
       recordId: sql<string>`${reference}`.as('record_id'),
-      field: sql<string>`${label}`.as('field'),
-      fromValue: sql<string>`${old[key]}`.as('from_value'),
-      toValue: sql<string>`${profile[key]}`.as('to_value'),
+      field: sql<string>`${field}`.as('field'),
+      fromValue: sql<string>`${from}`.as('from_value'),
+      toValue: sql<string>`${to}`.as('to_value'),
     }).from(teachers).where(and(eq(teachers.id, old.id), eq(teachers.updateToken, token)))));
     const [updated] = await db.batch([
       db.update(teachers).set({ ...profile, revision: old.revision + 1, updateToken: token })

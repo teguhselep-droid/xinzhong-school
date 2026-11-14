@@ -22,6 +22,17 @@ export type LedgerRow = {
 
 export type LedgerPage = { rows: LedgerRow[]; total: number; page: number };
 
+export type MonthlyAccountingReport = {
+  endDate: string;
+  income: AccountingAccount[];
+  expenses: AccountingAccount[];
+  banks: AccountingAccount[];
+  totalIncome: string;
+  totalExpenses: string;
+  net: string;
+  totalBankBalance: string;
+};
+
 const translations: Record<string, string> = {
   'tuition-income': 'Pendapatan kursus / 学费收入',
   'other-income': 'Pendapatan lain / 其他收入',

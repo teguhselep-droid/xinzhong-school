@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { ledgerPageSize, type AccountingAccount, type LedgerPage, type LedgerRow } from '@/lib/accounting-fields';
+import { ledgerPageSize, type AccountingAccount, type LedgerPage, type LedgerRow, type MonthlyAccountingReport } from '@/lib/accounting-fields';
 
 type DB = ReturnType<typeof getDb>;
 
@@ -14,6 +14,44 @@ export function chartOfAccounts(db: DB) {
     ) as balance
     from accounting_accounts a order by a.rowid
   `);
+}
+
+export async function monthlyAccountingReport(db: DB, month: string): Promise<MonthlyAccountingReport> {
+  const start = month + '-01';
+  const [year, monthNumber] = month.split('-').map(Number);
+  const endDate = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+  const rows = await db.all<AccountingAccount>(sql`
+    with movements as (
+      select debit_account_id as account_id, transaction_date, amount as movement
+      from accounting_entries where transaction_date <= ${endDate}
+      union all
+      select credit_account_id as account_id, transaction_date, -amount as movement
+      from accounting_entries where transaction_date <= ${endDate}
+    ), totals as (
+      select account_id, sum(movement) as ending_balance,
+        sum(case when transaction_date >= ${start} then movement else 0 end) as monthly_movement
+      from movements group by account_id
+    )
+    select a.id, a.name, a.kind, cast(case a.kind
+      when 'bank' then coalesce(t.ending_balance, 0)
+      when 'income' then -coalesce(t.monthly_movement, 0)
+      else coalesce(t.monthly_movement, 0)
+    end as text) as balance
+    from accounting_accounts a left join totals t on t.account_id = a.id
+    order by a.rowid
+  `);
+  const income = rows.filter(account => account.kind === 'income');
+  const expenses = rows.filter(account => account.kind === 'expense');
+  const banks = rows.filter(account => account.kind === 'bank');
+  const sum = (accounts: AccountingAccount[]) => accounts.reduce((total, account) => total + BigInt(account.balance), BigInt(0));
+  const incomeTotal = sum(income), expenseTotal = sum(expenses);
+  return {
+    endDate, income, expenses, banks,
+    totalIncome: String(incomeTotal),
+    totalExpenses: String(expenseTotal),
+    net: String(incomeTotal - expenseTotal),
+    totalBankBalance: String(sum(banks)),
+  };
 }
 
 export async function accountLedger(db: DB, account: { id: string; kind: AccountingAccount['kind'] },

@@ -50,6 +50,8 @@ const input = z.discriminatedUnion('action', [
   z.object({ action: z.literal('schedule'), ...meetingProfile }),
   z.object({ action: z.literal('add-day'), classId, id: z.string().uuid(), date, time: clock, minutes }),
   z.object({ action: z.literal('remove-day'), classId, id: meetingProfile.id, revision: meetingProfile.revision }),
+  z.object({ action: z.literal('add-leave'), classId, id: z.string().uuid(),
+    assignmentId: z.string().min(1).max(80), startsOn: date, endsOn: date, reason: z.string().trim().min(1).max(300) }),
   z.object({
     action: z.literal('record'), ...meetingProfile,
     entries: z.array(z.object({
@@ -71,19 +73,53 @@ export async function classRequest(db: DB, staff: Staff, body: unknown) {
     throw new ClassRequestError(forbidden, 403);
   }
   if (data.action === 'add-day' || data.action === 'remove-day') return changeSchedule(db, staff, data);
+  if (data.action === 'add-leave') return addClassLeave(db, staff, data);
   const teacher = await teacherLabel(db, data.teacherId);
   if (!teacher) throw new ClassRequestError('Guru tidak ditemukan / 未找到教师', 404);
   if (data.action === 'create' || data.action === 'edit') return saveClass(db, staff, data, teacher);
   return saveMeeting(db, staff, data, teacher);
 }
 
+async function addClassLeave(db: DB, staff: Staff, data: Extract<z.infer<typeof input>, { action: 'add-leave' }>) {
+  if (data.startsOn > data.endsOn) throw new ClassRequestError('Tanggal akhir sebelum tanggal mulai / 结束日期早于开始日期');
+  const [student] = await db.all<{ code: string; number: string | null; name: string }>(sql`
+    select c.code, s.registration_number as number, s.name_id as name
+    from student_class_assignments e join classes c on c.id = e.class_id join students s on s.id = e.student_id
+    where e.id = ${data.assignmentId} and c.id = ${data.classId} and e.removed_at is null and s.active = 1
+  `);
+  if (!student) throw new ClassRequestError('Murid belum terdaftar di kelas ini / 学生未报名此班级', 404);
+  const [existing] = await db.all<{ assignmentId: string; startsOn: string; endsOn: string; reason: string }>(sql`
+    select assignment_id as assignmentId, starts_on as startsOn, ends_on as endsOn, reason
+    from class_leaves where id = ${data.id}
+  `);
+  if (existing) {
+    if (existing.assignmentId !== data.assignmentId || existing.startsOn !== data.startsOn ||
+      existing.endsOn !== data.endsOn || existing.reason !== data.reason) throw new ClassRequestError(stale, 409);
+    return { id: data.id };
+  }
+  await writeBatch(db, [
+    sql`insert into class_leaves (id, assignment_id, starts_on, ends_on, reason, recorded_at, recorded_by)
+      values (${data.id}, ${data.assignmentId}, ${data.startsOn}, ${data.endsOn}, ${data.reason},
+        ${new Date().toISOString()}, ${staff.username})`,
+    audit(staff, classPages.detail, student.code, [{
+      field: 'Cuti murid / 学生暂停上课', from: 'Belum diisi / 未填写',
+      to: [student.number, student.name, data.startsOn + ' – ' + data.endsOn, data.reason].filter(Boolean).join(' · '),
+    }], sql`exists (select 1 from class_leaves where id = ${data.id})`),
+  ]);
+  return { id: data.id };
+}
+
 async function saveClass(db: DB, staff: Staff, data: ClassInput, teacher: string) {
   const studentIds = [...new Set(data.studentIds)];
   if (studentIds.length) {
-    const [result] = await db.all<{ total: number }>(sql`
-      select count(*) as total from students where id in (select value from json_each(${JSON.stringify(studentIds)}))
+    const [result] = await db.all<{ total: number; activeCount: number }>(sql`
+      select count(*) as total, coalesce(sum(active), 0) as activeCount
+      from students where id in (select value from json_each(${JSON.stringify(studentIds)}))
     `);
     if (result.total !== studentIds.length) throw new ClassRequestError('Murid tidak ditemukan / 未找到学生', 404);
+    if (result.activeCount !== studentIds.length) {
+      throw new ClassRequestError('Murid nonaktif tidak dapat didaftarkan / 非在读学生无法报名', 409);
+    }
   }
   const token = crypto.randomUUID();
   const guard = sql`exists (select 1 from classes where id = ${data.id} and update_token = ${token})`;
@@ -294,13 +330,18 @@ async function saveMeeting(db: DB, staff: Staff, data: MeetingInput, teacher: st
     }
   }
   const attendance = recording ? [sql`
-    insert into class_attendance (day_id, assignment_id, present, notes)
-    select ${day.id}, json_extract(value, '$.assignmentId'), json_extract(value, '$.present'), json_extract(value, '$.notes')
-    from json_each(${JSON.stringify(data.entries)}) where ${guard}
+    insert into class_attendance (day_id, assignment_id, present, notes, on_leave)
+    select ${day.id}, json_extract(value, '$.assignmentId'),
+      case when l.day_id is null then json_extract(value, '$.present') else 0 end,
+      json_extract(value, '$.notes'), l.day_id is not null
+    from json_each(${JSON.stringify(data.entries)}) j left join class_leave_days l
+      on l.day_id = ${day.id} and l.assignment_id = json_extract(j.value, '$.assignmentId')
+    where ${guard}
   `] : [];
   // A roster expansion or another save between the read and the batch invalidates this write.
   const rosterCheck = recording
-    ? sql`and (select count(*) from student_class_assignments where class_id = ${group.id} and removed_at is null) = ${roster.length}`
+    ? sql`and (select count(*) from student_class_assignments e join students s on s.id = e.student_id
+      where e.class_id = ${group.id} and e.removed_at is null and s.active = 1) = ${roster.length}`
     : sql.empty();
   const [updated] = await writeBatch(db, [
     sql`update class_days set date = ${data.date}, time = ${data.time}, minutes = ${data.minutes},

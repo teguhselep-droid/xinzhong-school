@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex, primaryKey, check, foreignKey } from 'drizzle-orm/sqlite-core';
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(), username: text('username').notNull().unique(),
   name: text('name').notNull(), role: text('role').notNull(),
@@ -28,6 +28,7 @@ export const students = sqliteTable('students', {
   updateToken: text('update_token'),
   registrationToken: text('registration_token').unique(),
   favCharCiphertext:text('fav_char_ciphertext'),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
   loginStatus:text('login_status').notNull().default('active'),
   failedLoginAttempts:integer('failed_login_attempts').notNull().default(0),
   lastFailedLoginAt:text('last_failed_login_at'),loginLockedAt:text('login_locked_at'),
@@ -67,6 +68,7 @@ export const studentRegistrationSequences=sqliteTable('student_registration_sequ
 });
 export const teachers = sqliteTable('teachers', {
   id: integer('id').primaryKey({ autoIncrement: true }),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
   nameId: text('name_id').notNull(),
   nameZh: text('name_zh').notNull().default(''),
   nik: text('nik').notNull().default(''),
@@ -113,10 +115,24 @@ export const classAttendance = sqliteTable('class_attendance', {
   dayId: text('day_id').notNull().references(() => classDays.id, { onDelete: 'restrict' }),
   assignmentId: text('assignment_id').notNull().references(() => studentClassAssignments.id, { onDelete: 'restrict' }),
   present: integer('present', { mode: 'boolean' }).notNull(),
+  onLeave: integer('on_leave', { mode: 'boolean' }).notNull().default(false),
   notes: text('notes').notNull().default(''),
 }, table => [
   primaryKey({ columns: [table.dayId, table.assignmentId] }),
   index('class_attendance_assignment_idx').on(table.assignmentId),
+]);
+
+export const classLeaves = sqliteTable('class_leaves', {
+  id: text('id').primaryKey(),
+  assignmentId: text('assignment_id').notNull().references(() => studentClassAssignments.id, { onDelete: 'restrict' }),
+  startsOn: text('starts_on').notNull(),
+  endsOn: text('ends_on').notNull(),
+  reason: text('reason').notNull(),
+  recordedAt: text('recorded_at').notNull(),
+  recordedBy: text('recorded_by').notNull(),
+}, table => [
+  index('class_leaves_assignment_idx').on(table.assignmentId, table.startsOn, table.endsOn),
+  check('class_leave_dates', sql`${table.startsOn} <= ${table.endsOn}`),
 ]);
 
 export const inventoryCategories = sqliteTable('inventory_categories', {
@@ -178,4 +194,75 @@ export const inventoryMovements = sqliteTable('inventory_movements', {
   check('inventory_movement_direction', sql`${table.direction} in ('in', 'out')`),
   check('inventory_movement_positive_quantity', sql`${table.quantity} > 0`),
   check('inventory_movement_positive_payment', sql`${table.payment} > 0`),
+]);
+
+export const schoolPayments = sqliteTable('school_payments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  token: text('token').notNull().unique(),
+  requestHash: text('request_hash').notNull(),
+  kind: text('kind', { enum: ['tuition', 'purchase', 'expense'] }).notNull(),
+  paymentDate: text('payment_date').notNull(),
+  bankId: text('bank_id').notNull().references(() => accountingAccounts.id, { onDelete: 'restrict' }),
+  categoryId: text('category_id').notNull().references(() => accountingAccounts.id, { onDelete: 'restrict' }),
+  studentId: integer('student_id').references(() => students.id, { onDelete: 'restrict' }),
+  studentTransactionId: text('student_transaction_id').references(() => studentTransactions.id, { onDelete: 'restrict' }),
+  classId: text('class_id').references(() => classes.id, { onDelete: 'restrict' }),
+  studentNumber: text('student_number'),
+  studentName: text('student_name'),
+  classCode: text('class_code'),
+  className: text('class_name'),
+  tuitionMonth: text('tuition_month'),
+  monthlyFee: integer('monthly_fee'),
+  total: integer('total').notNull(),
+  memo: text('memo').notNull(),
+  detail: text('detail').notNull().default('[]'),
+  photoMime: text('photo_mime'),
+  photoData: text('photo_data'),
+  recordedAt: text('recorded_at').notNull(),
+  recordedBy: text('recorded_by').notNull(),
+  voidedAt: text('voided_at'),
+  voidedBy: text('voided_by'),
+}, table => [
+  index('school_payment_kind_idx').on(table.kind, table.id),
+  index('school_payment_tuition_month_idx').on(table.tuitionMonth, table.studentId, table.classId),
+  check('school_payment_positive_total', sql`${table.total} > 0`),
+]);
+
+export const tuitionBills = sqliteTable('tuition_bills', {
+  studentId: integer('student_id').notNull().references(() => students.id, { onDelete: 'restrict' }),
+  classId: text('class_id').notNull().references(() => classes.id, { onDelete: 'restrict' }),
+  month: text('month').notNull(),
+  fee: integer('fee').notNull(),
+}, table => [
+  primaryKey({ columns: [table.studentId, table.classId, table.month] }),
+  index('tuition_bill_month_idx').on(table.month),
+  check('tuition_bill_positive_fee', sql`${table.fee} > 0`),
+]);
+
+export const tuitionWaivers = sqliteTable('tuition_waivers', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  token: text('token').notNull().unique(),
+  studentId: integer('student_id').notNull(),
+  classId: text('class_id').notNull(),
+  month: text('month').notNull(),
+  amount: integer('amount').notNull(),
+  reason: text('reason').notNull(),
+  recordedAt: text('recorded_at').notNull(),
+  recordedBy: text('recorded_by').notNull(),
+}, table => [
+  foreignKey({ columns: [table.studentId, table.classId, table.month],
+    foreignColumns: [tuitionBills.studentId, tuitionBills.classId, tuitionBills.month] }).onDelete('restrict'),
+  index('tuition_waiver_bill_idx').on(table.month, table.studentId, table.classId),
+  check('tuition_waiver_positive_amount', sql`${table.amount} > 0`),
+]);
+
+export const tuitionCoverage = sqliteTable('tuition_coverage', {
+  paymentId: integer('payment_id').notNull().references(() => schoolPayments.id, { onDelete: 'restrict' }),
+  studentId: integer('student_id').notNull().references(() => students.id, { onDelete: 'restrict' }),
+  dayId: text('day_id').notNull(),
+  released: integer('released', { mode: 'boolean' }).notNull().default(false),
+}, table => [
+  primaryKey({ columns: [table.paymentId, table.dayId] }),
+  uniqueIndex('tuition_coverage_current_unique').on(table.studentId, table.dayId).where(sql`${table.released} = 0`),
+  index('tuition_coverage_day_idx').on(table.dayId),
 ]);

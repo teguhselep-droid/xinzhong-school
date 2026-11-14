@@ -21,6 +21,7 @@ export type MovementDirection = 'in' | 'out';
 export const movementLabels = { in: 'Barang Masuk / 入库', out: 'Barang Keluar / 出库' };
 export type InventoryMovement = {
   id: number;
+  purchaseId: number | null;
   direction: MovementDirection;
   productId: number;
   product: string;

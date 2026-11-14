@@ -1,7 +1,8 @@
-import { and, asc, count, desc, eq, isNull, like, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { classAttendance, classDays, classes, studentClassAssignments, students, teachers } from '@/db/schema';
-import { canManageClasses, canTakeAttendance, classPageSize, meetingStart, type TeacherClassHistoryPage } from '@/lib/class-fields';
+import { canManageClasses, canTakeAttendance, classPageSize, meetingStart, type ClassHistoryPage, type ClassLeave } from '@/lib/class-fields';
+import { currentClassEnrollment } from '@/lib/student-class-summary';
 
 export const dayCode = sql<string>`${classes.code} || printf('%02d', ${classDays.dayNumber})`;
 export const actualTeacher = sql<number>`coalesce(${classDays.teacherId}, ${classes.teacherId})`;
@@ -22,7 +23,8 @@ const classColumns = {
   start: sql<string | null>`(select min(d.date) from class_days d where d.class_id = ${classes.id})`,
   finish: sql<string | null>`(select max(d.date) from class_days d where d.class_id = ${classes.id})`,
   dayCount: sql<number>`(select count(*) from class_days d where d.class_id = ${classes.id})`,
-  studentCount: sql<number>`(select count(*) from student_class_assignments e where e.class_id = ${classes.id} and e.removed_at is null)`,
+  studentCount: sql<number>`(select count(*) from student_class_assignments e join students s on s.id = e.student_id
+    where e.class_id = ${classes.id} and e.removed_at is null and s.active = 1)`,
   latestAttendance: sql<number | null>`(
     select (select count(*) from class_attendance a where a.day_id = d.id and a.present = 1)
     from class_days d where d.class_id = ${classes.id} and d.recorded_at is not null
@@ -50,7 +52,7 @@ export function classRoster(db: ReturnType<typeof getDb>, classId: string) {
     assignmentId: studentClassAssignments.id, id: students.id, nameId: students.nameId,
     nameZh: students.nameZh, registrationNumber: students.registrationNumber,
   }).from(studentClassAssignments).innerJoin(students, eq(students.id, studentClassAssignments.studentId))
-    .where(and(eq(studentClassAssignments.classId, classId), isNull(studentClassAssignments.removedAt)))
+    .where(and(eq(studentClassAssignments.classId, classId), isNull(studentClassAssignments.removedAt), eq(students.active, true)))
     .orderBy(asc(students.nameId), asc(students.id));
 }
 
@@ -74,11 +76,28 @@ export async function classDetails(db: ReturnType<typeof getDb>, id: string, sta
       canRemove: !day.recordedAt && canManageClasses(staff.role) && meetingStart(day.date, day.time) > now,
     })),
     roster: await classRoster(db, id),
+    leaves: canManageClasses(staff.role) ? await db.all<ClassLeave>(sql`
+      select l.id, l.assignment_id as assignmentId, l.starts_on as startsOn, l.ends_on as endsOn,
+        trim(s.name_id || ' ' || s.name_zh) as student, s.registration_number as registrationNumber,
+        l.reason, l.recorded_by as recordedBy, l.recorded_at as recordedAt
+      from class_leaves l join student_class_assignments e on e.id = l.assignment_id
+      join students s on s.id = e.student_id where e.class_id = ${id}
+      order by l.starts_on desc, l.id
+    `) : [],
   };
 }
 
 export async function meetingRoster(db: ReturnType<typeof getDb>, classId: string) {
-  return (await classRoster(db, classId)).map(student => ({ ...student, present: null, notes: '' }));
+  const [roster, leaves] = await Promise.all([
+    classRoster(db, classId),
+    db.all<{ assignmentId: string; startsOn: string; endsOn: string }>(sql`
+      select l.assignment_id as assignmentId, l.starts_on as startsOn, l.ends_on as endsOn
+      from class_leaves l join student_class_assignments e on e.id = l.assignment_id where e.class_id = ${classId}
+    `),
+  ]);
+  return roster.map(student => ({
+    ...student, present: null, notes: '', leaves: leaves.filter(leave => leave.assignmentId === student.assignmentId),
+  }));
 }
 
 export async function attendanceList(db: ReturnType<typeof getDb>, query: URLSearchParams) {
@@ -92,7 +111,8 @@ export async function attendanceList(db: ReturnType<typeof getDb>, query: URLSea
   );
   const records = db.select({
     code: dayCode, className: classes.name, date: classDays.date, time: classDays.time, minutes: classDays.minutes,
-    teacher: teacherName, student: studentName, present: classAttendance.present, notes: classAttendance.notes,
+    teacher: teacherName, student: studentName, present: classAttendance.present, onLeave: classAttendance.onLeave,
+    notes: classAttendance.notes,
     classId: classes.id, dayId: classDays.id, assignmentId: classAttendance.assignmentId,
   }).from(classAttendance).innerJoin(classDays, eq(classDays.id, classAttendance.dayId))
     .innerJoin(classes, eq(classes.id, classDays.classId))
@@ -108,7 +128,7 @@ export async function attendanceList(db: ReturnType<typeof getDb>, query: URLSea
   return { rows, page, total };
 }
 
-export async function teacherClassHistory(db: ReturnType<typeof getDb>, query: URLSearchParams): Promise<TeacherClassHistoryPage> {
+export function teacherClassHistory(db: ReturnType<typeof getDb>, query: URLSearchParams) {
   const teacherId = Number(query.get('teacher'));
   const pending = query.get('period') === 'previous' ? 0 : 1;
   const classesForTeacher = sql`
@@ -118,10 +138,24 @@ export async function teacherClassHistory(db: ReturnType<typeof getDb>, query: U
     group by c.id
     having max(d.recorded_at is null) = ${pending}
   `;
-  const [{ total }] = await db.all<{ total: number }>(sql`select count(*) as total from (${classesForTeacher})`);
+  return classHistoryPage(db, classesForTeacher, query);
+}
+
+export function studentClassHistory(db: ReturnType<typeof getDb>, studentId: number, query: URLSearchParams) {
+  const active = query.get('period') !== 'previous';
+  return classHistoryPage(db, sql`
+    select c.id, c.code, c.name
+    from student_class_assignments e join classes c on c.id = e.class_id
+    where e.student_id = ${studentId}
+      and ${active ? currentClassEnrollment : sql`not (${currentClassEnrollment})`}
+  `, query);
+}
+
+async function classHistoryPage(db: ReturnType<typeof getDb>, history: SQL, query: URLSearchParams): Promise<ClassHistoryPage> {
+  const [{ total }] = await db.all<{ total: number }>(sql`select count(*) as total from (${history})`);
   const page = pageNumber(query, total);
-  const rows = await db.all<TeacherClassHistoryPage['rows'][number]>(sql`
-    ${classesForTeacher} order by c.code desc limit ${classPageSize} offset ${(page - 1) * classPageSize}
+  const rows = await db.all<ClassHistoryPage['rows'][number]>(sql`
+    ${history} order by c.code desc limit ${classPageSize} offset ${(page - 1) * classPageSize}
   `);
   return { rows, page, total };
 }

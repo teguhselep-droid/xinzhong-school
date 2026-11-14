@@ -4,80 +4,26 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, BookOpen, LoaderCircle, Pencil, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { getClassData } from '@/components/class-forms';
-import { classPageSize, type TeacherClassHistoryPage } from '@/lib/class-fields';
+import ClassHistory from '@/components/class-history';
 import { chineseNameError, chineseNamePattern } from '@/lib/chinese-input';
 import { todayJakarta } from '@/lib/student-fields';
 import {
-  canEditTeachers, teacherColumns, teacherFields, teacherPageLabel, teacherPageSize,
+  canEditTeachers, teacherColumns, teacherFields, teacherPageLabel, teacherPageSize, teacherStatusField, teacherStatusLabel,
   type Teacher, type TeacherProfile,
 } from '@/lib/teacher-fields';
 
-type Draft = TeacherProfile & { id?: number; revision?: number };
+type Draft = TeacherProfile & { id?: number; revision?: number; active: boolean };
 type ListResult = { rows: Teacher[]; total: number; page: number; error?: string };
 const dateFormat = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'medium' });
-
-function TeacherClassSection({ teacherId, period }: { teacherId: number; period: 'current' | 'previous' }) {
-  const title = period === 'current' ? 'Kelas saat ini / 当前班级' : 'Kelas sebelumnya / 以往班级';
-  const [page, setPage] = useState(1);
-  const [result, setResult] = useState<{ requested: number; data?: TeacherClassHistoryPage; error?: string }>();
-  useEffect(() => {
-    const controller = new AbortController();
-    getClassData<TeacherClassHistoryPage>({
-      view: 'teacher-history', teacher: String(teacherId), period, page: String(page),
-    }, controller.signal)
-      .then(data => { if (!controller.signal.aborted) setResult({ requested: page, data }); })
-      .catch(error => { if (!controller.signal.aborted) setResult({ requested: page, error: error.message }); });
-    return () => controller.abort();
-  }, [teacherId, period, page]);
-  const loading = result?.requested !== page;
-  const data = result?.data;
-  const pageCount = Math.ceil((data?.total ?? 0) / classPageSize);
-  return <section aria-label={title} className="flex flex-col gap-2 rounded-md border p-3">
-    <h3 className="font-medium">{title}</h3>
-    {!loading && result?.error
-      ? <Alert variant="destructive"><AlertDescription>{result.error}</AlertDescription></Alert>
-      : <Table>
-        <TableHeader><TableRow>
-          <TableHead scope="col">ID kelas / 班级编号</TableHead>
-          <TableHead scope="col">Nama kelas / 班级名称</TableHead>
-        </TableRow></TableHeader>
-        <TableBody>
-          {loading || !data?.rows.length ? <TableRow><TableCell colSpan={2}>
-            {loading ? 'Memuat / 加载中…' : '—'}
-          </TableCell></TableRow> : data.rows.map(row => <TableRow key={row.id}>
-            <TableCell>{row.code}</TableCell>
-            <TableCell className="whitespace-normal break-words">
-              <a className="underline" href={'/class-details?' + new URLSearchParams({ class: row.id })}>{row.name}</a>
-            </TableCell>
-          </TableRow>)}
-        </TableBody>
-      </Table>}
-    {data && pageCount > 1 && <nav aria-label={title} className="flex flex-wrap items-center justify-between gap-2">
-      <span>Halaman / 页 {data.page} / {pageCount}</span>
-      <div className="flex gap-2">
-        <Button type="button" variant="outline" size="sm" disabled={loading || data.page <= 1}
-          onClick={() => setPage(data.page - 1)}>Sebelumnya / 上一页</Button>
-        <Button type="button" variant="outline" size="sm" disabled={loading || data.page >= pageCount}
-          onClick={() => setPage(data.page + 1)}>Berikutnya / 下一页</Button>
-      </div>
-    </nav>}
-  </section>;
-}
-
-function TeacherClasses({ teacherId }: { teacherId: number }) {
-  return <div className="flex flex-col gap-3">
-    <TeacherClassSection teacherId={teacherId} period="current" />
-    <TeacherClassSection teacherId={teacherId} period="previous" />
-  </div>;
-}
 
 export default function TeacherWorkspace({ role }: { role: string }) {
   const canEdit = canEditTeachers(role);
@@ -129,7 +75,7 @@ export default function TeacherWorkspace({ role }: { role: string }) {
   function openEditor(teacher?: Teacher) {
     const profile: Draft = {
       nameId: '', nameZh: '', birthdate: '', phone: '', address: '', city: '',
-      registeredDate: todayJakarta(),
+      registeredDate: todayJakarta(), active: teacher?.active ?? true,
     };
     if (role === 'supervisor') profile.nik = '';
     if (teacher) {
@@ -225,6 +171,9 @@ export default function TeacherWorkspace({ role }: { role: string }) {
                     </Button>
                   </TableCell>
                   {columns.map(([key]) => {
+                    if (key === 'active') return <TableCell key={key}>
+                      <Badge variant={teacher.active ? 'secondary' : 'outline'}>{teacherStatusLabel(teacher.active)}</Badge>
+                    </TableCell>;
                     const value = teacher[key];
                     const text = value && (key === 'birthdate' || key === 'registeredDate')
                       ? dateFormat.format(new Date(value + 'T00:00:00+07:00'))
@@ -272,6 +221,14 @@ export default function TeacherWorkspace({ role }: { role: string }) {
                           onChange={event => update(event.target.value)} />}
                   </Field>;
                 })}
+                <Field>
+                  <FieldLabel htmlFor="teacher-active">{teacherStatusField}</FieldLabel>
+                  <NativeSelect id="teacher-active" value={draft.active ? 'active' : 'inactive'}
+                    onChange={event => setDraft({ ...draft, active: event.target.value === 'active' })}>
+                    <NativeSelectOption value="active">{teacherStatusLabel(true)}</NativeSelectOption>
+                    <NativeSelectOption value="inactive">{teacherStatusLabel(false)}</NativeSelectOption>
+                  </NativeSelect>
+                </Field>
               </FieldGroup>
               {editError && <Alert variant="destructive"><AlertDescription>{editError}</AlertDescription></Alert>}
               <DialogFooter>
@@ -288,7 +245,7 @@ export default function TeacherWorkspace({ role }: { role: string }) {
       <Dialog open={!!historyTeacher} onOpenChange={open => { if (!open) setHistoryTeacher(null); }}>
         <DialogContent showCloseButton={false} aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Riwayat kelas / 课程记录 · {historyTeacher?.nameId} {historyTeacher?.nameZh}</DialogTitle></DialogHeader>
-          {historyTeacher && <TeacherClasses key={historyTeacher.id} teacherId={historyTeacher.id} />}
+          {historyTeacher && <ClassHistory key={historyTeacher.id} kind="teacher" id={historyTeacher.id} />}
           <DialogFooter><Button variant="outline" onClick={() => setHistoryTeacher(null)}>Tutup / 关闭</Button></DialogFooter>
         </DialogContent>
       </Dialog>

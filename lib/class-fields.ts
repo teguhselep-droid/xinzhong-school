@@ -33,13 +33,21 @@ export type ClassDay = {
 
 export type ClassStudent = { id: number; nameId: string; nameZh: string; registrationNumber: string | null };
 export type ClassTeacher = { id: number; nameId: string; nameZh: string };
-export type TeacherClassHistoryPage = {
+export type ClassHistoryPage = {
   rows: Pick<ClassRow, 'id' | 'code' | 'name'>[];
   page: number;
   total: number;
 };
 export type Enrollment = ClassStudent & { assignmentId: string };
-export type AttendanceEntry = Enrollment & { present: boolean | null; notes: string };
+export type LeavePeriod = { startsOn: string; endsOn: string };
+export type ClassLeave = LeavePeriod & {
+  id: string; assignmentId: string; student: string; registrationNumber: string | null;
+  reason: string; recordedBy: string; recordedAt: string;
+};
+export const classLeaveLabel = 'Cuti / 暂停上课';
+export const isOnClassLeave = (periods: LeavePeriod[], date: string) =>
+  periods.some(period => period.startsOn <= date && date <= period.endsOn);
+export type AttendanceEntry = Enrollment & { present: boolean | null; notes: string; leaves: LeavePeriod[] };
 export type AttendanceRecord = {
   code: string;
   className: string;
@@ -49,6 +57,7 @@ export type AttendanceRecord = {
   teacher: string;
   student: string;
   present: boolean;
+  onLeave: boolean;
   notes: string;
   dayId: string;
   classId: string;

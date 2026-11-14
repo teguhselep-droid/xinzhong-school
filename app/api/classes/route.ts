@@ -1,3 +1,4 @@
+import { acceptsRequestOrigin } from '@/lib/request-origin';
 import { and, asc, eq, like, or } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { students, teachers } from '@/db/schema';
@@ -70,8 +71,7 @@ export async function POST(req: Request) {
     const raw = await req.text();
     const staff = await current(req);
     if (!staff) return reply({ error: login }, 401);
-    const origin = req.headers.get('origin');
-    if (origin && origin !== new URL(req.url).origin) return reply({ error: forbidden }, 403);
+    if (!acceptsRequestOrigin(req)) return reply({ error: forbidden }, 403);
     if (!req.headers.get('content-type')?.includes('application/json')) return reply({ error: 'Format tidak valid / 格式无效' }, 415);
     if (raw.length > 750000) return reply({ error: 'Isi terlalu panjang / 内容过长' }, 413);
     let body: unknown;

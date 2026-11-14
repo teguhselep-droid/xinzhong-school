@@ -1,3 +1,4 @@
+import { acceptsRequestOrigin, requiresSecureSessionCookie } from '@/lib/request-origin';
 import { current } from '@/lib/server-auth';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/db';
@@ -31,8 +32,7 @@ export async function GET(req: Request) {
 }
 export async function POST(req: Request) {
   try {
-    const origin=req.headers.get('origin');
-    if(origin && origin!==new URL(req.url).origin) return fail('Permintaan ditolak / 请求被拒绝',403);
+    if(!acceptsRequestOrigin(req)) return fail('Permintaan ditolak / 请求被拒绝',403);
     if(!req.headers.get('content-type')?.includes('application/json')) return fail('Format tidak valid / 格式无效',415);
     const body=await req.json() as Record<string,any>;
     const db=getDb(); const action=body.action;
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
       await db.insert(sessions).values({tokenHash:await digest(token),userId:user.id,expiresAt:Date.now()+28800000});
       await db.update(users).set({lastLogin:new Date().toISOString()}).where(eq(users.id,user.id));
       await db.delete(loginLimits).where(eq(loginLimits.key,key));
-      return response({ok:true},200,`xz_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800${new URL(req.url).protocol==='https:'?'; Secure':''}`);
+      return response({ok:true},200,`xz_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800${requiresSecureSessionCookie(req)?'; Secure':''}`);
     }
     const me=await current(req);
     if(!me) return fail('Silakan masuk kembali / 请重新登录',401);

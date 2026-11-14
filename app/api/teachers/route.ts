@@ -1,3 +1,4 @@
+import { acceptsRequestOrigin } from '@/lib/request-origin';
 import { and, asc, count, desc, eq, getTableColumns, like, or, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { editHistory, teachers } from '@/db/schema';
@@ -60,8 +61,7 @@ export async function POST(req: Request) {
     const staff = await current(req);
     if (!staff) return fail(signIn, 401);
     if (!canEditTeachers(staff.role)) return fail(forbidden, 403);
-    const origin = req.headers.get('origin');
-    if (origin && origin !== new URL(req.url).origin) return fail(forbidden, 403);
+    if (!acceptsRequestOrigin(req)) return fail(forbidden, 403);
     if (!req.headers.get('content-type')?.includes('application/json')) return fail(invalid, 415);
 
     if (raw.length > 16000) return fail('Isi terlalu panjang / 内容过长', 413);

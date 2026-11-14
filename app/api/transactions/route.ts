@@ -1,3 +1,4 @@
+import { acceptsRequestOrigin } from '@/lib/request-origin';
 import { and, eq, isNull } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { schoolPayments } from '@/db/schema';
@@ -77,8 +78,7 @@ export async function POST(req: Request) {
   try {
     const staff = await current(req);
     if (!staff) return fail(login, 401);
-    const origin = req.headers.get('origin');
-    if (!canAccessTransactions(staff.role) || (origin && origin !== new URL(req.url).origin)) return fail(forbidden, 403);
+    if (!canAccessTransactions(staff.role) || !acceptsRequestOrigin(req)) return fail(forbidden, 403);
     const contentType = req.headers.get('content-type') ?? '';
     const db = getDb();
     if (contentType.startsWith('multipart/form-data')) {

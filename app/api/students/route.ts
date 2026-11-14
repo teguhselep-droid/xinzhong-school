@@ -1,3 +1,4 @@
+import { acceptsRequestOrigin } from '@/lib/request-origin';
 import {ensureRegistrationNumbers} from '@/lib/registration-numbers';
 import { getDb } from '@/db';
 import { students, editHistory,studentSessions } from '@/db/schema';
@@ -38,7 +39,7 @@ export async function POST(req:Request){
   if(!['supervisor','admin'].includes(me.role))return fail('Akses ditolak / 无访问权限',403);
   if(me.role!=='supervisor'&&Object.prototype.hasOwnProperty.call(body,'nik'))return fail('Hanya supervisor dapat mengubah NIK / 仅主管可修改身份证号码',403);
   if(Object.hasOwn(body,'favChar')||Object.hasOwn(body,'newFavChar'))return fail('Fav Char hanya dapat direset oleh supervisor / 主管仅可重置喜爱汉字',403);
-  if(req.headers.get('origin')&&req.headers.get('origin')!==new URL(req.url).origin)return fail('Permintaan ditolak / 请求被拒绝',403);
+  if(!acceptsRequestOrigin(req))return fail('Permintaan ditolak / 请求被拒绝',403);
   const db=getDb();await ensureRegistrationNumbers(db);
   if(!Number.isInteger(body.id)||!Number.isInteger(body.revision))return fail('Data tidak valid / 数据无效');
   const [old]=await db.select().from(students).where(eq(students.id,Number(body.id))); if(!old)return fail('Murid tidak ditemukan / 未找到学生',404);

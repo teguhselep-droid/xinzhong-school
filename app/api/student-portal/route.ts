@@ -1,3 +1,4 @@
+import { acceptsRequestOrigin } from '@/lib/request-origin';
 import {verifyStudent} from '@/lib/student-login';
 import {getDb} from '@/db';
 import {students,studentSessions,editHistory} from '@/db/schema';
@@ -13,7 +14,7 @@ const clearCookie='xz_student_session=; Path=/; HttpOnly; SameSite=Strict; Max-A
 export async function GET(req:Request){try{const who=await studentIdentity(req);return reply({student:who?await selfView(who.student):null})}catch(e){console.error(e);return fail('Gagal memuat data / 无法加载资料',500)}}
 export async function POST(req:Request){
  try{
-  if(req.headers.get('origin')&&req.headers.get('origin')!==new URL(req.url).origin)return fail('Permintaan ditolak / 请求被拒绝',403);
+  if(!acceptsRequestOrigin(req))return fail('Permintaan ditolak / 请求被拒绝',403);
   if(!req.headers.get('content-type')?.includes('application/json'))return fail('Format tidak valid / 格式无效',415);
   const raw=await req.text();if(raw.length>40000)return fail('Data terlalu panjang / 数据过长',413);
   let body:Record<string,unknown>;try{body=JSON.parse(raw);if(!body||typeof body!=='object'||Array.isArray(body))throw Error()}catch{return fail('Data tidak valid / 数据无效')}

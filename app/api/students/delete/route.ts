@@ -1,3 +1,4 @@
+import { acceptsRequestOrigin } from '@/lib/request-origin';
 import {ensureRegistrationNumbers} from '@/lib/registration-numbers';
 import {getDb} from '@/db';
 import {students,editHistory} from '@/db/schema';
@@ -12,7 +13,7 @@ export async function POST(req:Request){
   let body:Record<string,unknown>;try{body=await req.json() as Record<string,unknown>}catch{return reply({error:'Data tidak valid / 数据无效'},400)}
   const me=await current(req);if(!me)return reply({error:'Silakan masuk / 请登录'},401);
   if(me.role!=='supervisor')return reply({error:'Hanya supervisor dapat menghapus murid / 仅主管可删除学生'},403);
-  if(req.headers.get('origin')&&req.headers.get('origin')!==new URL(req.url).origin)return reply({error:'Permintaan ditolak / 请求被拒绝'},403);
+  if(!acceptsRequestOrigin(req))return reply({error:'Permintaan ditolak / 请求被拒绝'},403);
   if(!body||!Number.isInteger(body.id)||!Number.isInteger(body.revision))return reply({error:'Data tidak valid / 数据无效'},400);
   const db=getDb();await ensureRegistrationNumbers(db);
   const [old]=await db.select().from(students).where(eq(students.id,Number(body.id)));

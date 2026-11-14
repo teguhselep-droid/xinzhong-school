@@ -21,6 +21,11 @@ Run npx tsc --noEmit and the Sites build helper. Neither creates test users. scr
 
 ## Clean server installation
 
+When serving Xinzhong through an HTTPS tunnel to a local HTTP listener, set
+`XINZHONG_PUBLIC_ORIGIN=https://pos.xinzhongmandarin.com` in the server's
+`.dev.vars` beside the Wrangler config. Use the exact public origin without a
+trailing slash, then restart Xinzhong to load the setting.
+
 1. Transfer application source and schema migrations. Do not transfer local database state (.wrangler/), .dev.vars, .env files, or other ignored runtime folders. Configure the server's own database and runtime secrets.
 2. Install dependencies, build the application, and apply the schema-only migrations to the target database. With Sites, publication applies the hosted migrations automatically.
 3. Set the INITIAL_SUPERVISOR_PASSWORD runtime secret. On an empty database, the first successful login as teguh with that password creates the single supervisor account.

@@ -1,3 +1,4 @@
+import { acceptsRequestOrigin } from '@/lib/request-origin';
 import {ensureRegistrationNumbers} from '@/lib/registration-numbers';
 import {getDb} from '@/db';
 import {students,loginLimits} from '@/db/schema';
@@ -9,7 +10,7 @@ import {defaultFavChar} from '@/lib/chinese-input';
 const reply=(body:unknown,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
 export async function POST(req:Request){
  try{
-  if(req.headers.get('origin')&&req.headers.get('origin')!==new URL(req.url).origin)return reply({error:'Permintaan ditolak / 请求被拒绝'},403);
+  if(!acceptsRequestOrigin(req))return reply({error:'Permintaan ditolak / 请求被拒绝'},403);
   if(!req.headers.get('content-type')?.includes('application/json'))return reply({error:'Format tidak valid / 格式无效'},415);
   const raw=await req.text();if(raw.length>40000)return reply({error:'Data terlalu panjang / 数据过长'},413);
   let body:Record<string,unknown>;try{body=JSON.parse(raw);if(!body||Array.isArray(body)||typeof body!=='object')throw Error()}catch{return reply({error:'Data tidak valid / 数据无效'},400)}

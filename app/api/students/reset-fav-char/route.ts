@@ -1,3 +1,4 @@
+import { acceptsRequestOrigin } from '@/lib/request-origin';
 import { eq } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { students } from '@/db/schema';
@@ -13,8 +14,7 @@ export async function POST(req: Request) {
     const raw = await req.text();
     const staff = await current(req);
     if (!staff) return reply({ error: 'Silakan masuk / 请登录' }, 401);
-    const origin = req.headers.get('origin');
-    if (staff.role !== 'supervisor' || (origin && origin !== new URL(req.url).origin)) {
+    if (staff.role !== 'supervisor' || !acceptsRequestOrigin(req)) {
       return reply({ error: 'Akses ditolak / 无访问权限' }, 403);
     }
     const invalid = { error: 'Data tidak valid / 数据无效' };

@@ -1,3 +1,4 @@
+import { requiresSecureSessionCookie } from '@/lib/request-origin';
 import {ensureRegistrationNumbers} from '@/lib/registration-numbers';
 import {getDb} from '@/db';
 import {students,studentSessions,editHistory} from '@/db/schema';
@@ -51,5 +52,5 @@ export async function verifyStudent(req:Request,body:Record<string,unknown>){
  const previous=req.headers.get('cookie')?.split(';').map(x=>x.trim()).find(x=>x.startsWith('xz_student_session='))?.slice(19);
  if(previous)await db.delete(studentSessions).where(eq(studentSessions.tokenHash,await hash(previous)));
  await db.delete(studentSessions).where(sql`${studentSessions.expiresAt}<${now}`);
- return reply({student:await selfView(student),remainingAttempts:5},200,`xz_student_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=1800${new URL(req.url).protocol==='https:'?'; Secure':''}`);
+ return reply({student:await selfView(student),remainingAttempts:5},200,`xz_student_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=1800${requiresSecureSessionCookie(req)?'; Secure':''}`);
 }

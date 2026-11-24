@@ -1,0 +1,1 @@
+ALTER TABLE `inventory_movements` ADD `notes` text DEFAULT '' NOT NULL;

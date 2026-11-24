@@ -188,6 +188,7 @@ export const inventoryMovements = sqliteTable('inventory_movements', {
   quantity: integer('quantity').notNull(),
   payment: integer('payment').notNull(),
   bankId: text('bank_id').notNull().references(() => accountingAccounts.id, { onDelete: 'restrict' }),
+  notes: text('notes').notNull().default(''),
   recordedAt: text('recorded_at').notNull(),
   recordedBy: text('recorded_by').notNull(),
 }, table => [

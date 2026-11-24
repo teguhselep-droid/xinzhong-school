@@ -9,6 +9,7 @@ import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
@@ -194,6 +195,7 @@ function MovementEditor({ direction, close, saved }: { direction: MovementDirect
       return save(event, {
         token, direction, productId: product?.id, bankId,
         quantity: Number(values.get('quantity')), payment: Number(values.get('payment')),
+        notes: values.get('notes'),
       });
     }}>
       <FieldGroup>
@@ -227,6 +229,10 @@ function MovementEditor({ direction, close, saved }: { direction: MovementDirect
             {banks.map(bank => <NativeSelectOption key={bank.id} value={bank.id}>{bank.name}</NativeSelectOption>)}
           </NativeSelect>
         </Field>
+        <Field>
+          <FieldLabel htmlFor="movement-notes">Catatan / 备注</FieldLabel>
+          <Textarea id="movement-notes" name="notes" maxLength={2000} rows={3} />
+        </Field>
         <ErrorMessage message={options.error || error} />
         <SaveButtons busy={busy} close={close} disabled={!product || !bankId || options.loading} />
       </FieldGroup>
@@ -240,7 +246,7 @@ function MovementHistory({ close }: { close: () => void }) {
   const currentPage = data?.page ?? page;
   const pages = Math.max(1, Math.ceil((data?.total ?? 0) / inventoryPageSize));
   const columns = ['Tgl dicatat / 录入日期', 'Jenis / 类型', 'Nama barang / 商品名称', 'Qty / 数量',
-    'Total pembayaran / 付款总额', 'Rekening / 银行账户', 'Dicatat oleh / 录入人'];
+    'Total pembayaran / 付款总额', 'Rekening / 银行账户', 'Catatan / 备注', 'Dicatat oleh / 录入人'];
   return <Dialog open onOpenChange={open => { if (!open) close(); }}>
     <DialogContent className="student-editor" showCloseButton={false} aria-describedby={undefined}>
       <DialogHeader><DialogTitle>Catatan I/O / 出入库记录</DialogTitle></DialogHeader>
@@ -257,7 +263,7 @@ function MovementHistory({ close }: { close: () => void }) {
             <TableCell>
               {movementLabels[row.direction]}
               {row.purchaseId !== null && <div className="text-xs text-muted-foreground">
-                {row.direction === 'in' ? 'Pembatalan pembelian / 商品付款冲销' : 'Pembayaran pembelian / 商品付款'}
+                {row.direction === 'in' ? 'Pembatalan penjualan / 销售冲销' : 'Penjualan Produk / 产品销售'}
                 {' · ' + paymentCode(row.purchaseId)}
               </div>}
             </TableCell>
@@ -265,6 +271,7 @@ function MovementHistory({ close }: { close: () => void }) {
             <TableCell>{numberFormat.format(row.quantity)}</TableCell>
             <TableCell>{currency.format(row.payment)}</TableCell>
             <TableCell>{row.bank}</TableCell>
+            <TableCell className="min-w-48 max-w-80 whitespace-pre-wrap break-words">{row.notes || '—'}</TableCell>
             <TableCell>{row.recordedBy}</TableCell>
           </TableRow>)}
         </TableBody>

@@ -24,7 +24,7 @@ const statusTitle = 'Status pembayaran kursus / 学费状态';
 const loadingLabel = 'Memuat / 加载中…';
 const emptyLabel = 'Belum ada catatan / 暂无记录';
 const groups: PaymentKind[] = ['tuition', 'purchase', 'expense'];
-const groupTitles = { tuition: 'Kursus / 学费', purchase: 'Pembelian / 商品付款', expense: 'Pengeluaran / 支出' };
+const groupTitles = { tuition: 'Kursus / 学费', purchase: 'Penjualan Produk / 产品销售', expense: 'Pengeluaran / 支出' };
 
 function ErrorMessage({ error }: { error: string }) {
   return error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null;

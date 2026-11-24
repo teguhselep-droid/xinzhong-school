@@ -169,6 +169,13 @@
       "when": 1794318153406,
       "tag": "0023_loud_slipstream",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1795521488222,
+      "tag": "0024_reflective_cable",
+      "breakpoints": true
     }
   ]
 }

@@ -33,6 +33,9 @@ export type ClassDay = {
 
 export type ClassStudent = { id: number; nameId: string; nameZh: string; registrationNumber: string | null };
 export type ClassTeacher = { id: number; nameId: string; nameZh: string };
+export type ClassCalendarEntry = {
+  id: string; classId: string; name: string; code: string; date: string; time: string;
+};
 export type ClassHistoryPage = {
   rows: Pick<ClassRow, 'id' | 'code' | 'name'>[];
   page: number;

@@ -3,7 +3,7 @@ import { and, asc, eq, like, or } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { students, teachers } from '@/db/schema';
 import { current } from '@/lib/server-auth';
-import { attendanceList, classDetails, classList, meetingRoster, studentClassHistory, teacherClassHistory } from '@/lib/class-data';
+import { attendanceList, classCalendar, classDetails, classList, meetingRoster, studentClassHistory, teacherClassHistory } from '@/lib/class-data';
 import { canManageClasses } from '@/lib/class-fields';
 import { ensureRegistrationNumbers } from '@/lib/registration-numbers';
 import { classRequest, ClassRequestError } from '@/lib/class-writes';
@@ -22,6 +22,13 @@ export async function GET(req: Request) {
     const db = getDb();
     const query = new URL(req.url).searchParams;
     switch (query.get('view')) {
+      case 'calendar': {
+        const month = query.get('month') ?? '';
+        if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month)) {
+          return reply({ error: 'Bulan tidak valid / 月份无效' }, 400);
+        }
+        return reply(await classCalendar(db, month, (query.get('search') ?? '').trim().slice(0, 150)));
+      }
       case 'detail': {
         const detail = await classDetails(db, query.get('class') ?? '', staff);
         return detail ? reply(detail) : reply({ error: notFound }, 404);

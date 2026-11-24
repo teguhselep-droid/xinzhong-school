@@ -122,7 +122,7 @@ export default function TransactionForm({ kind, supervisor, close, saved }: {
   const banks = useTransactionData<PaymentBank[]>({ view: 'banks' });
   const search = number.trim();
   const suggestions = useTransactionData<Pick<PaymentStudent, 'number' | 'name'>[]>(
-    kind === 'tuition' && studentListOpen && search ? { view: 'student-suggestions', search } : null,
+    kind !== 'expense' && studentListOpen && search ? { view: 'student-suggestions', search } : null,
   );
   const lookup = useTransactionData<{ student: PaymentStudent; classes: PaymentClass[] }>(
     kind !== 'expense' && /^\d{7}$/.test(number) ? { view: 'student', student: number } : null,
@@ -249,7 +249,7 @@ export default function TransactionForm({ kind, supervisor, close, saved }: {
             {kind !== 'expense' && <>
               <Field>
                 <FieldLabel htmlFor="payment-student">ID murid / 学生编号</FieldLabel>
-                {kind === 'tuition' ? <Combobox<string> open={studentListOpen} onOpenChange={setStudentListOpen}
+                <Combobox<string> open={studentListOpen} onOpenChange={setStudentListOpen}
                   inputValue={number} onInputValueChange={(value, details) => {
                     if (details.reason !== 'input-change') return;
                     changeStudent(value);
@@ -267,8 +267,7 @@ export default function TransactionForm({ kind, supervisor, close, saved }: {
                       </ComboboxItem>)}
                     </ComboboxList>
                   </ComboboxContent>}
-                </Combobox> : <Input id="payment-student" inputMode="numeric" pattern="[0-9]{7}" maxLength={7}
-                  required value={number} onChange={event => changeStudent(event.target.value)} />}
+                </Combobox>
               </Field>
               <Field>
                 <FieldLabel htmlFor="payment-student-name">Nama murid / 学生姓名</FieldLabel>

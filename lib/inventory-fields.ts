@@ -30,4 +30,5 @@ export type InventoryMovement = {
   bank: string;
   recordedAt: string;
   recordedBy: string;
+  notes: string;
 };

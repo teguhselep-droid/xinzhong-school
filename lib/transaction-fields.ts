@@ -4,7 +4,7 @@ export const maxPaymentPhoto = 1_000_000;
 export const maxPurchaseItems = 30;
 export const transactionLabels = {
   tuition: { entry: 'Pembayaran kursus / 学费缴纳', history: 'Riwayat pembayaran kursus / 学费记录' },
-  purchase: { entry: 'Pembayaran pembelian / 商品付款', history: 'Riwayat pembelian / 商品付款记录' },
+  purchase: { entry: 'Penjualan Produk / 产品销售', history: 'Riwayat penjualan produk / 产品销售记录' },
   expense: { entry: 'Pengeluaran sekolah / 学校支出', history: 'Riwayat pengeluaran / 支出记录' },
 };
 export type PaymentKind = keyof typeof transactionLabels;

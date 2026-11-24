@@ -14,6 +14,7 @@ const input = z.object({
   quantity: z.number().int().min(1).max(maxInventoryQuantity),
   payment: z.number().int().min(1).max(maxTransactionAmount),
   bankId: z.string().uuid(),
+  notes: z.string().trim().max(2000).default(''),
 });
 const reply = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 const fail = (error: string, status = 400) => reply({ error }, status);
@@ -54,13 +55,13 @@ export async function GET(req: Request) {
         where p.kind = 'purchase'
       ), movements as (
         select m.id, m.direction, m.product_id as productId, p.name as product, m.quantity, m.payment,
-          m.bank_id, m.recorded_at as recordedAt, m.recorded_by as recordedBy, null as purchaseId
+          m.bank_id, m.recorded_at as recordedAt, m.recorded_by as recordedBy, null as purchaseId, m.notes
         from inventory_movements m join inventory_products p on p.id = m.product_id
         union all
-        select id, 'out', productId, product, quantity, payment, bank_id, recorded_at, recorded_by, id
+        select id, 'out', productId, product, quantity, payment, bank_id, recorded_at, recorded_by, id, ''
         from purchase_items
         union all
-        select id, 'in', productId, product, quantity, -payment, bank_id, voided_at, voided_by, id
+        select id, 'in', productId, product, quantity, -payment, bank_id, voided_at, voided_by, id, ''
         from purchase_items where voided_at is not null
       )
     `;
@@ -70,7 +71,7 @@ export async function GET(req: Request) {
     const rows = await db.all<InventoryMovement>(sql`
       ${history}
       select m.id, m.direction, m.productId, m.product, m.quantity, m.payment,
-        a.name as bank, m.recordedAt, m.recordedBy, m.purchaseId
+        a.name as bank, m.recordedAt, m.recordedBy, m.purchaseId, m.notes
       from movements m join accounting_accounts a on a.id = m.bank_id
       order by m.recordedAt desc, m.purchaseId is not null desc, m.id desc, m.direction, m.productId
       limit ${inventoryPageSize} offset ${(page - 1) * inventoryPageSize}
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
     if (!canAddInventory(staff.role)) return fail(forbidden, 403);
     if (!acceptsRequestOrigin(req)) return fail(forbidden, 403);
     if (!req.headers.get('content-type')?.includes('application/json')) return fail(invalid, 415);
-    if (raw.length > 5000) return fail(invalid, 413);
+    if (raw.length > 15000) return fail(invalid, 413);
     let body: unknown;
     try { body = JSON.parse(raw); } catch { return fail(invalid); }
     const parsed = input.safeParse(body);

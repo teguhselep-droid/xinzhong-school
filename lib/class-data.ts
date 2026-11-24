@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { classAttendance, classDays, classes, studentClassAssignments, students, teachers } from '@/db/schema';
-import { canManageClasses, canTakeAttendance, classPageSize, meetingStart, type ClassHistoryPage, type ClassLeave } from '@/lib/class-fields';
+import { canManageClasses, canTakeAttendance, classPageSize, meetingStart, type ClassHistoryPage, type ClassLeave, type ClassCalendarEntry } from '@/lib/class-fields';
 import { currentClassEnrollment } from '@/lib/student-class-summary';
 
 export const dayCode = sql<string>`${classes.code} || printf('%02d', ${classDays.dayNumber})`;
@@ -45,6 +45,16 @@ export async function classList(db: ReturnType<typeof getDb>, query: URLSearchPa
   const rows = await classQuery(db).where(where).orderBy(desc(classes.code))
     .limit(classPageSize).offset((page - 1) * classPageSize);
   return { rows, total, page };
+}
+
+export function classCalendar(db: ReturnType<typeof getDb>, month: string, search: string) {
+  return db.all<ClassCalendarEntry>(sql`
+    select d.id, c.id as classId, c.name, c.code, d.date, d.time
+    from class_days d join classes c on c.id = d.class_id
+    where d.date >= ${month + '-01'} and d.date < date(${month + '-01'}, '+1 month')
+      and instr(lower(c.name), lower(${search})) > 0
+    order by d.date, d.time, c.name, c.code, d.day_number
+  `);
 }
 
 export function classRoster(db: ReturnType<typeof getDb>, classId: string) {

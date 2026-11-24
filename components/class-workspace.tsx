@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { ArrowLeft, BookOpen, ClipboardPenLine, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, CalendarDays, ChevronLeft, ChevronRight, ClipboardPenLine, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -11,11 +11,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { todayJakarta } from '@/lib/student-fields';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AddMeetingDialog, ClassEditor, ClassLeaveDialog, classDate, classHours, getClassData, MeetingEditor, saveClassData } from '@/components/class-forms';
 import {
   canManageClasses, classLeaveLabel, classPageSize, classPages, type AttendanceEntry, type AttendanceRecord, type ClassLeave,
-  type ClassDay, type ClassRow, type ClassTeacher, type Enrollment,
+  type ClassDay, type ClassRow, type ClassTeacher, type Enrollment, type ClassCalendarEntry,
 } from '@/lib/class-fields';
 
 type Detail = { group: ClassRow; days: ClassDay[]; roster: Enrollment[]; leaves: ClassLeave[] };
@@ -83,7 +86,76 @@ function SearchBox({ search, change }: { search: string; change: (search: string
   </div>;
 }
 
+function ClassScheduleCalendar({ close }: { close: () => void }) {
+  const [month, setMonth] = useState(todayJakarta().slice(0, 7));
+  const [search, setSearch] = useState('');
+  const result = useClassData<ClassCalendarEntry[]>(month ? { view: 'calendar', month, search } : null);
+  const first = new Date((month || todayJakarta().slice(0, 7)) + '-01T00:00:00Z');
+  const offset = (first.getUTCDay() + 6) % 7;
+  const dayCount = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  const weeks = Math.ceil((offset + dayCount) / 7);
+  const today = todayJakarta();
+  const byDate = new Map<string, ClassCalendarEntry[]>();
+  for (const entry of result.data ?? []) {
+    const entries = byDate.get(entry.date) ?? [];
+    entries.push(entry);
+    byDate.set(entry.date, entries);
+  }
+  function moveMonth(change: number) {
+    const date = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + change, 1));
+    setMonth(date.toISOString().slice(0, 7));
+  }
+  return <Dialog open onOpenChange={open => { if (!open) close(); }}>
+    <DialogContent className="sm:max-w-6xl" showCloseButton={false} aria-describedby={undefined}>
+      <DialogHeader><DialogTitle>Kalender kelas / 课程日历</DialogTitle></DialogHeader>
+      <FieldGroup className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field>
+          <FieldLabel htmlFor="class-calendar-month">Bulan / 月份</FieldLabel>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" size="icon" disabled={month <= '2000-01'}
+              aria-label="Bulan sebelumnya / 上个月" onClick={() => moveMonth(-1)}><ChevronLeft /></Button>
+            <Input id="class-calendar-month" type="month" min="2000-01" max="2099-12" value={month}
+              onChange={event => setMonth(event.target.value)} />
+            <Button type="button" variant="outline" size="icon" disabled={month >= '2099-12'}
+              aria-label="Bulan berikutnya / 下个月" onClick={() => moveMonth(1)}><ChevronRight /></Button>
+          </div>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="class-calendar-search">Filter nama kelas / 筛选班级名称</FieldLabel>
+          <Input id="class-calendar-search" maxLength={150} value={search}
+            onChange={event => setSearch(event.target.value)} />
+        </Field>
+      </FieldGroup>
+      <ErrorMessage message={result.error} />
+      {month && <Table className="min-w-[700px] table-fixed" aria-label="Kalender kelas / 课程日历">
+        <TableHeader><TableRow>{['Sen / 一', 'Sel / 二', 'Rab / 三', 'Kam / 四', 'Jum / 五', 'Sab / 六', 'Min / 日']
+          .map(label => <TableHead key={label} scope="col" className="text-center">{label}</TableHead>)}</TableRow></TableHeader>
+        <TableBody>{Array.from({ length: weeks }, (_, week) => <TableRow key={week}>
+          {Array.from({ length: 7 }, (_, weekday) => {
+            const day = week * 7 + weekday - offset + 1;
+            const date = month + '-' + String(day).padStart(2, '0');
+            return <TableCell key={weekday} className="h-28 border align-top whitespace-normal">
+              {day > 0 && day <= dayCount && <div className="flex flex-col gap-2">
+                <time dateTime={date} aria-current={date === today ? 'date' : undefined}
+                  className={date === today ? 'font-bold text-primary' : 'text-muted-foreground'}>{day}</time>
+                {(byDate.get(date) ?? []).map(entry => <a key={entry.id} href={detailLink(entry.classId)}
+                  className="rounded border bg-secondary p-1 text-xs text-secondary-foreground hover:underline break-words">
+                  <time>{entry.time}</time>{' · '}{entry.name}
+                </a>)}
+              </div>}
+            </TableCell>;
+          })}
+        </TableRow>)}</TableBody>
+      </Table>}
+      {month && !result.data && !result.error && <div role="status">{loadingText}</div>}
+      {result.data?.length === 0 && <div role="status">Tidak ada jadwal / 暂无课次</div>}
+      <DialogFooter><Button type="button" variant="outline" onClick={close}>Tutup / 关闭</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
+}
+
 function ClassList({ manager }: { manager: boolean }) {
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [reload, setReload] = useState(0);
@@ -93,9 +165,12 @@ function ClassList({ manager }: { manager: boolean }) {
   const detail = useClassData<Detail>(editor && editor !== 'new' ? { view: 'detail', class: editor.id } : null, reload);
   const error = list.error || teachers.error || detail.error;
   return <>
-    <Heading view="classes">{manager && <Button onClick={() => setEditor('new')}>
+    <Heading view="classes">
+      <Button variant="outline" onClick={() => setCalendarOpen(true)}><CalendarDays data-icon="inline-start" />Kalender / 日历</Button>
+      {manager && <Button onClick={() => setEditor('new')}>
       <Plus data-icon="inline-start" />Tambah kelas / 添加班级
     </Button>}</Heading>
+    {calendarOpen && <ClassScheduleCalendar close={() => setCalendarOpen(false)} />}
     <ErrorMessage message={error} />
     <Card className="users-card student-table">
       <CardContent>

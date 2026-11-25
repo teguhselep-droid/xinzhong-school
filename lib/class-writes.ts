@@ -6,6 +6,7 @@ import { classDays, classes, teachers } from '@/db/schema';
 import { classRoster, meetingRoster } from '@/lib/class-data';
 import { canManageClasses, canTakeAttendance, classPages, meetingStart } from '@/lib/class-fields';
 import { todayJakarta } from '@/lib/student-fields';
+import { maxTransactionAmount } from '@/lib/accounting-fields';
 
 type DB = ReturnType<typeof getDb>;
 type Staff = { id: string; role: string; username: string };
@@ -32,6 +33,7 @@ const location = z.string().trim().min(1).max(200);
 const minutes = z.number().int().min(1).max(1440);
 const classProfile = {
   id: classId, name: z.string().trim().min(1).max(200), teacherId, location,
+  monthlyFee: z.number().int().min(0).max(maxTransactionAmount).nullable().optional(),
   studentIds: z.array(z.number().int().positive()).max(300),
 };
 const meetingProfile = {
@@ -137,9 +139,9 @@ async function saveClass(db: DB, staff: Staff, data: ClassInput, teacher: string
     const dates = [...new Set(data.dates)].sort();
     const period = dates[0].slice(2, 4) + dates[0].slice(5, 7);
     const create = sql`
-      insert into classes (id, code, name, teacher_id, location, created_at, recorded_by, update_token)
+      insert into classes (id, code, name, teacher_id, location, monthly_fee, created_at, recorded_by, update_token)
       select ${data.id}, ${period} || printf('%02d', n + 1), ${data.name}, ${data.teacherId}, ${data.location},
-        ${createdAt}, ${staff.username}, ${token}
+        ${data.monthlyFee ?? null}, ${createdAt}, ${staff.username}, ${token}
       from (select coalesce(max(cast(substr(code, 5, 2) as integer)), 0) as n from classes where code like ${period + '%'})
       where n < 99 on conflict(id) do nothing
     `;
@@ -165,6 +167,7 @@ async function saveClass(db: DB, staff: Staff, data: ClassInput, teacher: string
   }
 
   if (!old) throw new ClassRequestError(missing, 404);
+  const monthlyFee = data.monthlyFee === undefined ? old.monthlyFee : data.monthlyFee;
   if (old.revision !== data.revision) throw new ClassRequestError(stale, 409);
   const roster = await classRoster(db, data.id);
   const existing = new Map(roster.map(student => [student.id, student]));
@@ -176,8 +179,9 @@ async function saveClass(db: DB, staff: Staff, data: ClassInput, teacher: string
   if (existing.size - removed.size + added.length > 300) {
     throw new ClassRequestError('Maksimal 300 murid per kelas / 每班最多300名学生');
   }
-  const changes = compare(old, data, [
+  const changes = compare(old, { ...data, monthlyFee }, [
     ['name', 'Nama kelas / 班级名称'], ['teacherId', 'Guru default / 默认教师'], ['location', 'Lokasi / 地点'],
+    ['monthlyFee', 'Tarif bulanan / 月费'],
   ]);
   for (const id of added) changes.push({ field: 'Pendaftaran kelas / 班级报名', from: '', to: String(id) });
   for (const student of roster) {
@@ -191,6 +195,7 @@ async function saveClass(db: DB, staff: Staff, data: ClassInput, teacher: string
 
   const [updated] = await writeBatch(db, [
     sql`update classes set name = ${data.name}, teacher_id = ${data.teacherId}, location = ${data.location},
+      monthly_fee = ${monthlyFee},
       revision = revision + 1, update_token = ${token} where id = ${data.id} and revision = ${old.revision}`,
     enroll,
     sql`update student_class_assignments set removed_at = ${createdAt}

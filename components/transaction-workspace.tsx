@@ -9,8 +9,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Field, FieldLabel } from '@/components/ui/field';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import TransactionForm from '@/components/transaction-form';
 import { paymentDay, paymentMoney, paymentTime, transactionEndpoint, transactionRequest, useTransactionData } from '@/components/transaction-request';
@@ -25,6 +26,7 @@ const loadingLabel = 'Memuat / 加载中…';
 const emptyLabel = 'Belum ada catatan / 暂无记录';
 const groups: PaymentKind[] = ['tuition', 'purchase', 'expense'];
 const groupTitles = { tuition: 'Kursus / 学费', purchase: 'Penjualan Produk / 产品销售', expense: 'Pengeluaran / 支出' };
+const dayPrice = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 2 });
 
 function ErrorMessage({ error }: { error: string }) {
   return error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null;
@@ -47,14 +49,6 @@ function Pagination({ page, total, change }: { page: number; total: number; chan
 
 function PaymentDetails({ row }: { row: PaymentHistory }) {
   if (row.kind === 'expense') return <span className="whitespace-pre-wrap break-words">{row.memo}</span>;
-  if (row.kind === 'tuition') return <div className="flex flex-col gap-1">
-    <span>{row.tuitionMonth} · {row.classCode} · {row.className}</span>
-    {row.monthlyFee !== null && <span>Tarif bulanan / 月费 · {paymentMoney(row.monthlyFee)}</span>}
-    {!!row.detail.length && <details>
-      <summary className="cursor-pointer">Hari yang dirujuk / 关联课次</summary>
-      <ul>{(row.detail as TuitionLine[]).map(day => <li key={day.id}>{day.code} · {paymentDay(day.date)}</li>)}</ul>
-    </details>}
-  </div>;
   return <details>
     <summary className="cursor-pointer">{row.detail.length} barang / 种商品</summary>
     <Table>
@@ -86,7 +80,9 @@ function HistoryDialog({ kind, supervisor, close }: { kind: PaymentKind; supervi
   const historyPage = showWaivers ? waivers.data : data;
   const columns = [
     ...(supervisor ? [''] : []), 'ID pembayaran / 付款编号', 'Tgl pembayaran / 付款日期', 'Rekening / 银行账户',
-    kind === 'expense' ? 'Kategori / 类别' : 'Murid / 学生', 'Detail / 详情', 'Total / 合计',
+    kind === 'expense' ? 'Kategori / 类别' : 'Murid / 学生',
+    ...(kind === 'tuition' ? ['ID Kelas / 班级编号', 'Nama Kelas / 班级名称', 'Hari yang dirujuk / 关联课次',
+      'Jumlah Hari Kelas yang dirujuk / 关联课次数', 'Harga per Hari Kelas / 每课次金额'] : ['Detail / 详情']), 'Total / 合计',
     'Foto / 照片', 'Tgl dicatat / 录入日期', 'Dicatat oleh / 录入人', 'Status / 状态',
   ];
   async function voidPayment() {
@@ -146,7 +142,16 @@ function HistoryDialog({ kind, supervisor, close }: { kind: PaymentKind; supervi
             <TableCell>{kind === 'expense'
               ? expenseCategories.find(([id]) => id === row.categoryId)?.[1] ?? '—'
               : row.studentNumber + ' · ' + row.studentName}</TableCell>
-            <TableCell className="min-w-36 whitespace-normal"><PaymentDetails row={row} /></TableCell>
+            {kind === 'tuition' ? <>
+              <TableCell>{row.classCode}</TableCell><TableCell>{row.className}</TableCell>
+              <TableCell className="min-w-48 whitespace-normal">{row.detail.length ? <details>
+                <summary className="cursor-pointer">Hari yang dirujuk / 关联课次</summary>
+                <ul>{(row.detail as TuitionLine[]).map(day =>
+                  <li key={day.id}>{day.code} · {paymentDay(day.date)}</li>)}</ul>
+              </details> : '—'}</TableCell>
+              <TableCell>{row.detail.length}</TableCell>
+              <TableCell>{row.detail.length ? dayPrice.format(row.total / row.detail.length) : '—'}</TableCell>
+            </> : <TableCell className="min-w-36 whitespace-normal"><PaymentDetails row={row} /></TableCell>}
             <TableCell>{paymentMoney(row.total)}</TableCell>
             <TableCell>{row.hasPhoto ? <a className="underline" href={transactionEndpoint + '?view=photo&id=' + row.id}
               target="_blank" rel="noopener noreferrer">Lihat foto / 查看照片</a> : '—'}</TableCell>
@@ -181,15 +186,17 @@ function HistoryDialog({ kind, supervisor, close }: { kind: PaymentKind; supervi
   </>;
 }
 
-function TuitionStatusDialog({ close }: { close: () => void }) {
+function TuitionStatusDialog({ close, supervisor }: { close: () => void; supervisor: boolean }) {
   const [month, setMonth] = useState(todayJakarta().slice(0, 7));
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [onlyUnpaid, setOnlyUnpaid] = useState(true);
+  const [reload, setReload] = useState(0);
+  const [waiver, setWaiver] = useState<{ row: TuitionStatusRow; month: string; token: string } | null>(null);
   const result = useTransactionData<TransactionPage<TuitionStatusRow>>(month ? {
     view: 'status', month, search, page: String(page), onlyUnpaid: onlyUnpaid ? '1' : '0',
-  } : null);
-  return <Dialog open onOpenChange={open => { if (!open) close(); }}>
+  } : null, reload);
+  return <><Dialog open onOpenChange={open => { if (!open && !waiver) close(); }}>
     <DialogContent className="sm:max-w-5xl" showCloseButton={false} aria-describedby={undefined}>
       <DialogHeader><DialogTitle>{statusTitle}</DialogTitle></DialogHeader>
       <div className="flex flex-wrap items-end gap-3">
@@ -230,11 +237,56 @@ function TuitionStatusDialog({ close }: { close: () => void }) {
             row.fee === null ? 'Belum ditetapkan / 未设定' : paymentMoney(row.fee)}</TableCell>
           <TableCell>{paymentMoney(row.paid)}</TableCell>
           <TableCell>{paymentMoney(row.waived)}</TableCell>
-          <TableCell>{row.due === null ? '—' : row.due === 0 && !row.skipped ? 'Lunas / 已结清' : paymentMoney(row.due)}</TableCell>
+          <TableCell>{row.due === null ? '—' : row.due === 0 && !row.skipped ? 'Lunas / 已结清' : paymentMoney(row.due)}
+            {supervisor && row.due !== null && row.due > 0 && <Button type="button" variant="outline" size="sm"
+              onClick={() => setWaiver({ row, month, token: crypto.randomUUID() })}>{tuitionWaiverLabel}</Button>}
+          </TableCell>
         </TableRow>) : <TableRow><TableCell colSpan={8}>{result.loading ? loadingLabel : result.error ? '—' : emptyLabel}</TableCell></TableRow>}</TableBody>
       </Table>
       {result.data && <Pagination page={result.data.page} total={result.data.total} change={setPage} />}
       <DialogFooter><Button type="button" variant="outline" onClick={close}>Tutup / 关闭</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>
+  {waiver && <TuitionWaiverDialog target={waiver} close={() => setWaiver(null)} saved={() => {
+    setWaiver(null); setReload(value => value + 1);
+  }} />}
+  </>;
+}
+
+function TuitionWaiverDialog({ target, close, saved }: {
+  target: { row: TuitionStatusRow; month: string; token: string }; close: () => void; saved: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  return <Dialog open onOpenChange={open => { if (!open && !busy) close(); }}>
+    <DialogContent aria-describedby={undefined} showCloseButton={false}>
+      <DialogHeader><DialogTitle>{tuitionWaiverLabel}</DialogTitle></DialogHeader>
+      <p>{target.row.studentNumber} · {target.row.classCode} · {target.month}</p>
+      <form onSubmit={async event => {
+        event.preventDefault();
+        if (busy) return;
+        const fields = new FormData(event.currentTarget);
+        setBusy(true); setError('');
+        try {
+          await transactionRequest(transactionEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'waive-tuition', token: target.token, studentNumber: target.row.studentNumber,
+              classCode: target.row.classCode, month: target.month, amount: Number(fields.get('amount')), reason: fields.get('reason') }) });
+          saved();
+        } catch (error) { setError((error as Error).message); } finally { setBusy(false); }
+      }}>
+        <FieldGroup>
+          <Field><FieldLabel htmlFor="legacy-waiver-amount">Jumlah penghapusan (Rp) / 减免金额（印尼盾）</FieldLabel>
+            <Input id="legacy-waiver-amount" name="amount" type="number" min={1} max={target.row.due ?? 0}
+              defaultValue={target.row.due ?? 0} required /></Field>
+          <Field><FieldLabel htmlFor="legacy-waiver-reason">Alasan / 原因</FieldLabel>
+            <Textarea id="legacy-waiver-reason" name="reason" maxLength={300} required /></Field>
+          <ErrorMessage error={error} />
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={busy} onClick={close}>Batal / 取消</Button>
+            <Button type="submit" disabled={busy}>Simpan / 保存</Button>
+          </DialogFooter>
+        </FieldGroup>
+      </form>
     </DialogContent>
   </Dialog>;
 }
@@ -258,11 +310,11 @@ export default function TransactionWorkspace({ role }: { role: string }) {
         </CardContent>
       </Card>)}
     </div>
-    {editor && <TransactionForm kind={editor} supervisor={role === 'supervisor'} close={() => setEditor(null)} saved={id => {
+    {editor && <TransactionForm kind={editor} close={() => setEditor(null)} saved={id => {
       setEditor(null);
       toast.success('Transaksi disimpan / 交易已保存 · ' + paymentCode(id));
     }} />}
     {history && <HistoryDialog kind={history} supervisor={role === 'supervisor'} close={() => setHistory(null)} />}
-    {status && <TuitionStatusDialog close={() => setStatus(false)} />}
+    {status && <TuitionStatusDialog supervisor={role === 'supervisor'} close={() => setStatus(false)} />}
   </main>;
 }

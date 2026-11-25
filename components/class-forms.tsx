@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { classLeaveLabel, isOnClassLeave, type AttendanceEntry, type ClassDay, type ClassLeave,
   type ClassRow, type ClassStudent, type ClassTeacher, type Enrollment } from '@/lib/class-fields';
 import { todayJakarta } from '@/lib/student-fields';
+import { maxTransactionAmount } from '@/lib/accounting-fields';
 
 export async function getClassData<T>(params: Record<string, string>, signal?: AbortSignal): Promise<T> {
   const response = await fetch('/api/classes?' + new URLSearchParams(params), { signal, cache: 'no-store' });
@@ -134,6 +135,7 @@ export function ClassEditor({ group, roster, teachers, close, saved }: {
   const [name, setName] = useState(group?.name ?? '');
   const [teacher, setTeacher] = useState(String(group?.teacherId ?? ''));
   const [location, setLocation] = useState(group?.location ?? '');
+  const [monthlyFee, setMonthlyFee] = useState(group?.monthlyFee === null || !group ? '' : String(group.monthlyFee));
   const [dates, setDates] = useState<Date[]>([]);
   const [minutes, setMinutes] = useState('60');
   const [selected, setSelected] = useState<ClassStudent[]>(roster);
@@ -145,6 +147,7 @@ export function ClassEditor({ group, roster, teachers, close, saved }: {
       <DialogHeader><DialogTitle>{group ? 'Edit kelas / 编辑班级' : 'Tambah kelas / 添加班级'}</DialogTitle></DialogHeader>
       <form onSubmit={e => submit(e, {
         action: group ? 'edit' : 'create', id, name, teacherId: Number(teacher), location,
+        monthlyFee: monthlyFee === '' ? null : Number(monthlyFee),
         studentIds: [...selectedIds].filter(id => !originalIds.has(id)),
         removeStudentIds: [...originalIds].filter(id => !selectedIds.has(id)), revision: group?.revision,
         dates: dates.map(isoDate), time: new FormData(e.currentTarget).get('time'), minutes: Number(minutes),
@@ -156,6 +159,11 @@ export function ClassEditor({ group, roster, teachers, close, saved }: {
           </Field>
           <FieldGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <TeacherField value={teacher} change={setTeacher} teachers={teachers} assigned={group?.teacher} />
+            <Field>
+              <FieldLabel htmlFor="class-monthly-fee">Tarif bulanan (Rp) / 月费（印尼盾）</FieldLabel>
+              <Input id="class-monthly-fee" type="number" min={0} max={maxTransactionAmount} step={1}
+                required={!group} value={monthlyFee} onChange={event => setMonthlyFee(event.target.value)} />
+            </Field>
             <Field>
               <FieldLabel htmlFor="class-form-location">Lokasi / 地点</FieldLabel>
               <Input id="class-form-location" required maxLength={200} value={location} onChange={e => setLocation(e.target.value)} />

@@ -14,7 +14,7 @@ export const expenseCategories = [
 ] as const;
 export type PaymentBank = { id: string; name: string };
 export type PaymentStudent = { id: number; number: string; name: string };
-export type PaymentClass = { id: string; code: string; name: string };
+export type PaymentClass = { id: string; code: string; name: string; monthlyFee: number | null };
 export type PayableDay = { id: string; code: string; date: string; paid: boolean; onLeave: boolean };
 export type TuitionMonth = { fee: number | null; paid: number; waived: number; due: number | null; skipped: boolean; days: PayableDay[] };
 export const tuitionWaiverLabel = 'Penghapusan tagihan / 学费减免';

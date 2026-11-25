@@ -1,17 +1,17 @@
 import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
-import { inventoryProducts, schoolPayments, tuitionBills, tuitionWaivers } from '@/db/schema';
+import { inventoryProducts, schoolPayments, tuitionWaivers } from '@/db/schema';
 import { maxTransactionAmount } from '@/lib/accounting-fields';
 import { maxInventoryQuantity } from '@/lib/inventory-fields';
 import { todayJakarta } from '@/lib/student-fields';
-import { paymentClass, paymentStudent, tuitionMonthDetails } from '@/lib/transaction-data';
+import { payableDays, paymentClass, paymentStudent, tuitionMonthDetails } from '@/lib/transaction-data';
 import { discountedPrice, expenseCategories, maxPaymentPhoto, maxPurchaseItems, validTuitionMonth, type PurchaseLine, type TuitionLine } from '@/lib/transaction-fields';
 
 const positiveMoney = z.number().int().min(1).max(maxTransactionAmount);
 const studentNumber = z.string().regex(/^\d{7}$/);
 const tuitionFields = {
-  studentNumber, classCode: z.string().regex(/^\d{6}$/), month: z.string().refine(validTuitionMonth), monthlyFee: positiveMoney,
+  studentNumber, classCode: z.string().regex(/^\d{6}$/), month: z.string().refine(validTuitionMonth),
 };
 const common = {
   token: z.string().uuid(), bankId: z.string().uuid(),
@@ -21,10 +21,10 @@ const common = {
   }),
 };
 const input = z.discriminatedUnion('kind', [
-  z.object({ ...common, kind: z.literal('tuition'), ...tuitionFields,
+  z.object({ ...common, kind: z.literal('tuition'), studentNumber, classCode: tuitionFields.classCode,
     amount: positiveMoney, days: z.array(z.object({
       id: z.string().min(1).max(40), code: z.string().regex(/^\d{8}$/), date: z.string().length(10),
-    })).max(99) }),
+    })).min(1).max(99) }),
   z.object({ ...common, kind: z.literal('purchase'), studentNumber,
     items: z.array(z.object({ productId: z.number().int().positive(), quantity: z.number().int().min(1).max(maxInventoryQuantity),
       discount: z.number().int().min(0).max(maxTransactionAmount) })).min(1).max(maxPurchaseItems) }),
@@ -37,29 +37,6 @@ export class PaymentError extends Error {
 }
 const invalid = 'Data pembayaran tidak valid / 付款资料无效';
 const stale = 'Data telah berubah. Muat ulang formulir. / 资料已更改，请刷新表单。';
-const noDays = 'Tidak ada jadwal untuk bulan ini / 此月暂无课次';
-const feeChanged = 'Tarif bulanan telah ditetapkan dengan jumlah berbeda / 已设定不同的月费';
-const monthOnLeave = 'Tagihan dilewati karena cuti / 暂停上课期间免收月费';
-const exceedsDue = 'Jumlah melebihi sisa tagihan / 金额超过剩余应付金额';
-
-export async function setTuitionFee(db: ReturnType<typeof getDb>, body: unknown) {
-  const parsed = z.object(tuitionFields).safeParse(body);
-  if (!parsed.success) throw new PaymentError(invalid);
-  const data = parsed.data;
-  const student = await paymentStudent(db, data.studentNumber);
-  if (!student) throw new PaymentError('Murid tidak ditemukan / 未找到学生', 404);
-  const group = await paymentClass(db, student.id, data.classCode);
-  if (!group) throw new PaymentError('Murid belum terdaftar di kelas ini / 学生未报名此班级', 404);
-  const details = await tuitionMonthDetails(db, student.id, group, data.month);
-  if (details.skipped) throw new PaymentError(monthOnLeave, 409);
-  if (!details.days.length && details.fee === null) throw new PaymentError(noDays, 409);
-  await db.insert(tuitionBills).values({
-    studentId: student.id, classId: group.id, month: data.month, fee: data.monthlyFee,
-  }).onConflictDoNothing();
-  const saved = await tuitionMonthDetails(db, student.id, group, data.month);
-  if (saved.fee !== data.monthlyFee) throw new PaymentError(feeChanged, 409);
-  return saved;
-}
 
 export async function waiveTuition(db: ReturnType<typeof getDb>, body: unknown, username: string) {
   const { studentNumber, classCode, month } = tuitionFields;
@@ -133,13 +110,9 @@ export async function createPayment(db: ReturnType<typeof getDb>, form: FormData
     if (data.kind === 'tuition') {
       const group = await paymentClass(db, student.id, data.classCode);
       if (!group) throw new PaymentError('Murid belum terdaftar di kelas ini / 学生未报名此班级', 404);
-      const bill = await tuitionMonthDetails(db, student.id, group, data.month);
-      if (bill.skipped) throw new PaymentError(monthOnLeave, 409);
-      if (!bill.days.length && bill.fee === null) throw new PaymentError(noDays, 409);
-      if (bill.fee !== null && bill.fee !== data.monthlyFee) throw new PaymentError(feeChanged, 409);
-      if (data.amount > (bill.due ?? data.monthlyFee)) throw new PaymentError(exceedsDue, 409);
+      const available = await payableDays(db, student.id, group);
       const selected = new Map(data.days.map(day => [day.id, day]));
-      const days = bill.days.filter(day => selected.has(day.id));
+      const days = available.filter(day => selected.has(day.id));
       if (days.length !== data.days.length || days.some(day => {
         const original = selected.get(day.id);
         return original?.code !== day.code || original?.date !== day.date;
@@ -150,8 +123,7 @@ export async function createPayment(db: ReturnType<typeof getDb>, form: FormData
       receipt.classId = group.id;
       receipt.classCode = group.code;
       receipt.className = group.name;
-      receipt.tuitionMonth = data.month;
-      receipt.monthlyFee = data.monthlyFee;
+      receipt.monthlyFee = group.monthlyFee;
       receipt.categoryId = 'tuition-income';
       receipt.memo = student.number + ' / ' + group.code;
       receipt.total = data.amount;

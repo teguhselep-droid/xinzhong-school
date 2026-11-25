@@ -5,6 +5,7 @@ export type ClassRow = {
   teacherId: number;
   teacher: string;
   location: string;
+  monthlyFee: number | null;
   start: string | null;
   finish: string | null;
   dayCount: number;

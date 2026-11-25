@@ -87,6 +87,7 @@ export const classes = sqliteTable('classes', {
   name: text('name').notNull(),
   teacherId: integer('teacher_id').notNull().references(() => teachers.id, { onDelete: 'restrict' }),
   location: text('location').notNull(),
+  monthlyFee: integer('monthly_fee'),
   createdAt: text('created_at'),
   recordedBy: text('recorded_by'),
   revision: integer('revision').notNull().default(0),

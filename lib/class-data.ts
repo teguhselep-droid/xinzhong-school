@@ -17,7 +17,7 @@ export const teacherMeetingCount = sql<number>`(
 const studentName = sql<string>`trim(${students.nameId} || ' ' || ${students.nameZh})`;
 const totalPresent = sql<number>`(select count(*) from class_attendance a where a.day_id = ${classDays.id} and a.present = 1)`;
 const classColumns = {
-  id: classes.id, code: classes.code, name: classes.name, location: classes.location,
+  id: classes.id, code: classes.code, name: classes.name, location: classes.location, monthlyFee: classes.monthlyFee,
   teacherId: classes.teacherId, teacher: teacherName, revision: classes.revision,
   createdAt: classes.createdAt, recordedBy: classes.recordedBy,
   start: sql<string | null>`(select min(d.date) from class_days d where d.class_id = ${classes.id})`,

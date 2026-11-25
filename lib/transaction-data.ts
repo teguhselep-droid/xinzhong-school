@@ -33,27 +33,27 @@ export function paymentStudentSuggestions(db: DB, search: string) {
 
 export function paymentClasses(db: DB, studentId: number) {
   return db.all<PaymentClass>(sql`
-    select c.id, c.code, c.name from classes c join student_class_assignments a on a.class_id = c.id
+    select c.id, c.code, c.name, c.monthly_fee as monthlyFee from classes c join student_class_assignments a on a.class_id = c.id
     where a.student_id = ${studentId} order by c.code desc
   `);
 }
 
 export async function paymentClass(db: DB, studentId: number, code: string) {
   const [group] = await db.all<PaymentClass>(sql`
-    select c.id, c.code, c.name from classes c join student_class_assignments a on a.class_id = c.id
+    select c.id, c.code, c.name, c.monthly_fee as monthlyFee from classes c join student_class_assignments a on a.class_id = c.id
     where a.student_id = ${studentId} and c.code = ${code}
   `);
   return group;
 }
 
-async function payableDays(db: DB, studentId: number, group: PaymentClass, month: string) {
+export async function payableDays(db: DB, studentId: number, group: PaymentClass, month?: string) {
   const rows = await db.all<Omit<PayableDay, 'paid' | 'onLeave'> & { paid: number; onLeave: number }>(sql`
     select d.id, ${group.code} || printf('%02d', d.day_number) as code, d.date, exists (
       select 1 from tuition_coverage t where t.day_id = d.id and t.student_id = ${studentId} and t.released = 0
     ) as paid, exists (
       select 1 from class_leave_days l where l.day_id = d.id and l.student_id = ${studentId}
     ) as onLeave from class_days d where d.class_id = ${group.id}
-      and substr(d.date, 1, 7) = ${month} order by d.day_number
+      ${month ? sql`and substr(d.date, 1, 7) = ${month}` : sql.empty()} order by d.date, d.time, d.day_number
   `);
   return rows.map(row => ({ ...row, paid: !!row.paid, onLeave: !!row.onLeave }));
 }
@@ -64,13 +64,19 @@ export async function tuitionMonthDetails(db: DB, studentId: number, group: Paym
       select (select fee from tuition_bills where student_id = ${studentId} and class_id = ${group.id} and month = ${month}) as fee,
         coalesce((select sum(amount) from tuition_waivers
           where student_id = ${studentId} and class_id = ${group.id} and month = ${month}), 0) as waived,
-        coalesce(sum(total), 0) as paid from school_payments
+        coalesce(sum(total), 0) + coalesce((
+          select sum(p.total * 1.0 / json_array_length(p.detail))
+          from school_payments p, json_each(p.detail) j
+          where p.student_id = ${studentId} and p.class_id = ${group.id} and p.kind = 'tuition'
+            and p.tuition_month is null and p.voided_at is null
+            and substr(json_extract(j.value, '$.date'), 1, 7) = ${month}
+        ), 0) as paid from school_payments
         where student_id = ${studentId} and class_id = ${group.id} and tuition_month = ${month} and voided_at is null
     `),
     payableDays(db, studentId, group, month),
   ]);
   const skipped = totals.fee === null && days.length > 0 && days.every(day => day.onLeave);
-  return { ...totals, skipped, due: totals.fee === null ? (skipped ? 0 : null) : totals.fee - totals.paid - totals.waived, days };
+  return { ...totals, skipped, due: totals.fee === null ? (skipped ? 0 : null) : Math.max(0, totals.fee - totals.paid - totals.waived), days };
 }
 
 export function paymentProducts(db: DB, search: string) {
@@ -122,14 +128,24 @@ export async function tuitionStatus(db: DB, month: string, query: URLSearchParam
     ), monthly_pairs as (
       select student_id, class_id from attended_days
       union select student_id, class_id from tuition_bills where month = ${month}
+      union select p.student_id, p.class_id from school_payments p, json_each(p.detail) j
+      where p.kind = 'tuition' and p.tuition_month is null and p.voided_at is null
+        and substr(json_extract(j.value, '$.date'), 1, 7) = ${month}
       union select e.student_id, e.class_id from student_class_assignments e
       join students s on s.id = e.student_id and s.active = 1
       where e.removed_at is null and exists (
         select 1 from class_days d where d.class_id = e.class_id and substr(d.date, 1, 7) = ${month}
       )
     ), monthly_payments as (
-      select student_id, class_id, sum(total) as paid from school_payments
-      where tuition_month = ${month} and voided_at is null group by student_id, class_id
+      select student_id, class_id, sum(amount) as paid from (
+        select student_id, class_id, total as amount from school_payments
+        where tuition_month = ${month} and voided_at is null
+        union all
+        select p.student_id, p.class_id, p.total * 1.0 / json_array_length(p.detail) as amount
+        from school_payments p, json_each(p.detail) j
+        where p.kind = 'tuition' and p.tuition_month is null and p.voided_at is null
+          and substr(json_extract(j.value, '$.date'), 1, 7) = ${month}
+      ) group by student_id, class_id
     ), monthly_waivers as (
       select student_id, class_id, sum(amount) as waived from tuition_waivers
       where month = ${month} group by student_id, class_id
@@ -137,17 +153,23 @@ export async function tuitionStatus(db: DB, month: string, query: URLSearchParam
     select s.registration_number as studentNumber, trim(s.name_id || ' ' || s.name_zh) as studentName,
       c.code as classCode, c.name as className, coalesce(a.attended, 0) as attended,
       coalesce(a.referenced, 0) as referenced, coalesce(a.unreferencedDays, '[]') as unreferencedDays,
-      b.fee, coalesce(p.paid, 0) as paid, coalesce(w.waived, 0) as waived,
+      coalesce(b.fee, c.monthly_fee) as fee, coalesce(p.paid, 0) as paid, coalesce(w.waived, 0) as waived,
       b.fee is null and l.student_id is not null as skipped,
       case when b.fee is null and l.student_id is not null then 0
-        else b.fee - coalesce(p.paid, 0) - coalesce(w.waived, 0) end as due
+        when b.fee is not null then max(0, b.fee - coalesce(p.paid, 0) - coalesce(w.waived, 0)) end as due
     from monthly_pairs m join students s on s.id = m.student_id join classes c on c.id = m.class_id
     left join attended_days a on a.student_id = m.student_id and a.class_id = m.class_id
     left join tuition_bills b on b.student_id = m.student_id and b.class_id = m.class_id and b.month = ${month}
     left join monthly_payments p on p.student_id = m.student_id and p.class_id = m.class_id
     left join monthly_waivers w on w.student_id = m.student_id and w.class_id = m.class_id
     left join tuition_leave_months l on l.student_id = m.student_id and l.class_id = m.class_id and l.month = ${month}
-    where 1 = 1 ${onlyUnpaid ? sql`and ((b.fee is null and l.student_id is null) or b.fee > coalesce(p.paid, 0) + coalesce(w.waived, 0))` : sql.empty()}
+    where 1 = 1 ${onlyUnpaid ? sql`and (
+      (b.fee is null and l.student_id is null and exists (
+        select 1 from class_days d where d.class_id = m.class_id and substr(d.date, 1, 7) = ${month}
+          and not exists (select 1 from tuition_coverage t where t.student_id = m.student_id and t.day_id = d.id and t.released = 0)
+          and not exists (select 1 from class_leave_days x where x.student_id = m.student_id and x.day_id = d.id)
+      )) or b.fee > coalesce(p.paid, 0) + coalesce(w.waived, 0)
+    )` : sql.empty()}
     ${search ? sql`and (
       s.registration_number like ${match} or s.name_id like ${match} or s.name_zh like ${match}
       or c.code like ${match} or c.name like ${match}

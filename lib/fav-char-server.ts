@@ -1,7 +1,10 @@
 import {env} from 'cloudflare:workers';
+export class FavCharConfigurationError extends Error {
+ constructor(){super('FAV_CHAR_ENCRYPTION_KEY is missing or invalid');this.name='FavCharConfigurationError'}
+}
 function keyBytes(){
  const raw=(env as unknown as Record<string,string>).FAV_CHAR_ENCRYPTION_KEY;
- if(!raw||!/^[a-f0-9]{64}$/i.test(raw))throw Error('FAV_CHAR_ENCRYPTION_KEY is not configured');
+ if(!raw||!/^[a-f0-9]{64}$/i.test(raw))throw new FavCharConfigurationError();
  return Uint8Array.from(raw.match(/../g)!,x=>parseInt(x,16));
 }
 export async function encryptFavChar(value:string){

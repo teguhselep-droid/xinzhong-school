@@ -42,7 +42,7 @@ export async function POST(req:Request){
   const token=crypto.randomUUID(),now=new Date().toISOString(),changes=Object.fromEntries(changed.map(([key])=>[key,data[key]]));
   const audit=changed.map(([key,label])=>db.insert(editHistory).select(db.select({id:sql<number>`NULL`.as('id'),editedAt:sql<string>`${now}`.as('edited_at'),userId:sql<string>`${'student:'+old.id}`.as('user_id'),username:sql<string>`${'Murid / 学生 '+registrationNumber(old)}`.as('username'),page:sql<string>`'Biodata murid / 学生个人资料'`.as('page'),recordId:sql<string>`${registrationNumber(old)}`.as('record_id'),field:sql<string>`${label}`.as('field'),fromValue:sql<string>`${old[key]}`.as('from_value'),toValue:sql<string>`${data[key]}`.as('to_value')}).from(students).where(and(eq(students.id,old.id),eq(students.updateToken,token)))));
   const updated={...old,...changes,revision:old.revision+1};
-  const reverify=['nameId','phone','birthdate'].some(key=>key in changes);
+  const reverify='birthdate' in changes;
   const result=await db.batch([db.update(students).set({...changes,revision:updated.revision,updateToken:token}).where(and(eq(students.id,old.id),eq(students.revision,old.revision),eq(students.active,true),eq(students.loginStatus,'active'),eq(students.loginAccessVersion,old.loginAccessVersion))).returning({id:students.id}),...audit]);
   if(!result[0].length)return fail('Data telah berubah. Muat ulang sebelum mengedit. / 资料已更改，请刷新后编辑。',409);
   // Updating identity invalidates all earlier identity hashes. NIK completion does too.

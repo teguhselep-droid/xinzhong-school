@@ -4,10 +4,8 @@ import {getDb} from '@/db';
 import {eq,and,gt} from 'drizzle-orm';
 import {registrationNumber,ageYears} from '@/lib/student-fields';
 import { studentClassSummary } from '@/lib/student-class-summary';
-export const normalizeName=(s:string)=>s.normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('id');
-export const normalizePhone=(s:string)=>{const d=s.replace(/\D/g,'');return d.startsWith('62')?'0'+d.slice(2):d};
 export const hash=async(s:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))).map(x=>x.toString(16).padStart(2,'0')).join('');
-export const identityHash=(s:typeof students.$inferSelect)=>hash(JSON.stringify([normalizeName(s.nameId),normalizePhone(s.phone),s.birthdate,s.nik,s.loginAccessVersion,s.favCharCiphertext]));
+export const identityHash=(s:typeof students.$inferSelect)=>hash(JSON.stringify([s.registrationNumber,s.birthdate,s.nik,s.loginAccessVersion,s.favCharCiphertext]));
 export async function selfView(s:typeof students.$inferSelect){
  const {id,registrationToken,updateToken,nik,favCharCiphertext,active,loginStatus,failedLoginAttempts,lastFailedLoginAt,loginLockedAt,loginVersion,loginAccessVersion,...data}=s;
  const [classSummary] = await getDb().select(studentClassSummary).from(students).where(eq(students.id, id));

@@ -3,34 +3,29 @@ import {ensureRegistrationNumbers} from '@/lib/registration-numbers';
 import {getDb} from '@/db';
 import {students,studentSessions,editHistory} from '@/db/schema';
 import {and,eq,sql} from 'drizzle-orm';
-import {hash,identityHash,normalizeName,normalizePhone,selfView} from '@/lib/student-portal';
+import {hash,identityHash,selfView} from '@/lib/student-portal';
 import {registrationNumber} from '@/lib/student-fields';
 import {isFavChar,favCharError,defaultFavChar} from '@/lib/chinese-input';
 import {verifyFavChar} from '@/lib/fav-char-server';
 export const lockedMessage='Akses murid terkunci. Hubungi admin atau supervisor untuk membuka kunci. / 学生访问已锁定，请联系行政人员或主管解锁。';
 export async function verifyStudent(req:Request,body:Record<string,unknown>){
  const reply=(data:unknown,status=200,cookie?:string)=>Response.json(data,{status,headers:{'Cache-Control':'no-store',Vary:'Cookie',...(cookie?{'Set-Cookie':cookie}:{})}});
- const name=typeof body.nameId==='string'?body.nameId:'',phone=typeof body.phone==='string'?body.phone:'',dob=typeof body.birthdate==='string'?body.birthdate:'';
- if(!name.trim()||name.length>200||phone.length>200||normalizePhone(phone).length<6||!/^\d{4}-\d{2}-\d{2}$/.test(dob))return reply({error:'Lengkapi nama, telepon, dan tanggal lahir / 请填写姓名、电话和出生日期'},400);
+ const number=typeof body.registrationNumber==='string'?body.registrationNumber.trim():'';
+ const dob=typeof body.birthdate==='string'?body.birthdate:'';
+ if(!/^\d{7}$/.test(number)||!/^\d{4}-\d{2}-\d{2}$/.test(dob))return reply({error:'Lengkapi nomor registrasi dan tanggal lahir / 请填写注册编号和出生日期'},400);
  const favChar=typeof body.favChar==='string'?body.favChar:'';
  if(!isFavChar(favChar))return reply({error:favCharError},400);
  const db=getDb();await ensureRegistrationNumbers(db);
- // Apply the same whitespace normalization as the public name input.
- let nameSql=sql`replace(replace(replace(${students.nameId},char(9),' '),char(10),' '),char(13),' ')`;
- for(let i=0;i<10;i++)nameSql=sql`replace(${nameSql},'  ',' ')`;
- const candidates=await db.select().from(students).where(sql`lower(trim(${nameSql})) = ${normalizeName(name)}`);
- const named=candidates.filter(s=>normalizeName(s.nameId)===normalizeName(name));
- const matches=named.filter(s=>normalizePhone(s.phone)===normalizePhone(phone)&&s.birthdate===dob);
- const student=named.length===1?named[0]:matches.length===1?matches[0]:null;
- if(!student)return reply({error:'Data tidak cocok atau nama tidak unik. Periksa kembali atau hubungi sekolah. / 资料不匹配或姓名重复，请检查或联系学校。'},401);
+ const [student]=await db.select().from(students).where(eq(students.registrationNumber,number));
+ if(!student)return reply({error:'Data tidak cocok / 资料不匹配'},401);
  if(student.active&&student.loginStatus==='locked')return reply({error:lockedMessage,locked:true,remainingAttempts:0},423);
- const favoriteMatches=matches.length===1&&(student.favCharCiphertext
+ const favoriteMatches=student.birthdate===dob&&(student.favCharCiphertext
   ? await verifyFavChar(favChar,student.favCharCiphertext)
   : favChar===defaultFavChar);
  if(!student.active)return favoriteMatches
   ? reply({error:'Status murid nonaktif. Hubungi sekolah. / 学生为非在读状态，请联系学校。'},403)
   : reply({error:'Data tidak cocok / 资料不匹配'},401);
- if(matches.length!==1||!favoriteMatches){
+ if(!favoriteMatches){
   const token=crypto.randomUUID(),time=new Date().toISOString();
   const guard=and(eq(students.id,student.id),eq(students.active,true),eq(students.loginStatus,'active'),eq(students.revision,student.revision));
   const result=await db.batch([

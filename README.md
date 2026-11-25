@@ -71,12 +71,12 @@ Student list and student editor expose NIK only to supervisors. Other staff API 
 
 ## Student self-service portal
 
-- /student-portal requires no staff login. POST /api/student-portal verifies the student's Indonesian name, phone, and birthdate as a three-part match; duplicate matches fail closed. Names are case/whitespace normalized and Indonesian +62/0 phone formats are equivalent.
+- /student-portal requires no staff login. POST /api/student-portal verifies the student's seven-digit registration number, birthdate, and single Han Fav Char.
 - These biographical facts are a limited identity check, not strong authentication. Additional verification factors can be added to the verify action later. Hosted access still follows the Sites audience policy.
 - A separate 30-minute HttpOnly session stores only a hashed random token and a proof of the verified identity. The server always scopes reads/updates to that student. Staff sessions cannot authenticate as a student, and student sessions cannot access staff APIs.
 - Biodata can be edited. Existing NIK is masked and cannot be replaced through self-service; missing NIK can be completed once. Registration number/date, age, class, and attendance are server-controlled.
 - Student changes use the same atomic per-field edit-history mechanism with a student registration-number actor. Staff-only NIK privacy remains intact.
-- Changes to name/phone/birthdate require verification again. Identity changes made by staff invalidate earlier student sessions. Session expiry and identity switches are checked when returning to a tab and periodically while visible. Saves bind the registration number as well as the revision to prevent wrong-record edits after a browser tab switches students.
+- Changes to birthdate require verification again. Identity changes made by staff invalidate earlier student sessions. Session expiry and identity switches are checked when returning to a tab and periodically while visible. Saves bind the registration number as well as the revision to prevent wrong-record edits after a browser tab switches students.
 - Class history and payment history remain reserved boxes. No transaction or class history is fabricated.
 - Portal rate limits and all integration verification ran in the separate ignored disposable database. The normal preview's existing student data was not changed.
 
@@ -84,7 +84,7 @@ Student list and student editor expose NIK only to supervisors. Other staff API 
 
 - Students have five consecutive failed verification attempts. Successful verification resets the account counter to zero. Failure counts do not expire with time.
 - The fifth failed attempt sets loginStatus=locked. Correct details cannot bypass a lock; only an admin or supervisor can set Status login back to active in Edit murid. Unlocking resets the count to zero and invalidates earlier sessions.
-- Failed attempts are attributed to a unique normalized Indonesian name. When duplicate names exist, a unique full match can authenticate; an ambiguous failure is not charged to an arbitrary student. Unknown names do not lock unrelated records.
+- Failed attempts are attributed to the exact student registration number. Wrong birthdates or Fav Chars count toward the five-attempt limit. Unknown registration numbers do not lock unrelated records.
 - Data murid displays the sortable Login Status with failed count. The editor also displays the count and last failed time. Automatic locks and manual status changes/unlocks are recorded in Edit History.
 - Auth-state versions prevent stale staff forms from undoing a lock. Session access versions and status checks prevent old sessions from reviving after unlock. Student self-service cannot change loginStatus or counters.
 - Old timed portal attempt keys are no longer used by student verification. This replaces the prior ten-attempt/15-minute policy. Staff login and public registration limits are unchanged.
@@ -95,7 +95,7 @@ Chinese names use the shared Han-character validator in lib/chinese-input.ts. Si
 ## Fav Char verification factor
 
 - Registration assigns the initial Fav Char / 喜爱汉字 automatically. New students and older records without a saved character use 中. Existing saved characters continue to work.
-- Student verification now requires Indonesian name, phone, birthdate, AND Fav Char. Only all four correct details reset the counter. Five failures still permanently lock access until admin/supervisor unlocks it.
+- Student verification requires registration number, birthdate, and Fav Char. All three correct details reset the counter. Five failures still permanently lock access until admin/supervisor unlocks it.
 - A verified student can enter one new Han character in the portal. Supervisors can only reset it to 中 in Edit murid at the student's request. Staff and student views never receive the saved character or ciphertext.
 - Saved characters are encrypted with AES-256-GCM and a random nonce. Changing or resetting the character revokes existing student sessions. Edit History records the action without logging the character or ciphertext. Resetting the character does not unlock a locked account.
 - REQUIRED RUNTIME SECRET: FAV_CHAR_ENCRYPTION_KEY is a stable 32-byte key encoded as 64 hex characters. It is configured locally in ignored .dev.vars. Before publishing, configure this SAME key as a secret in the destination runtime. Never commit or package .dev.vars, expose the key, or regenerate it during builds. Back it up securely together with the corresponding database. A database transfer must retain the matching key; key rotation requires re-encrypting existing values.
